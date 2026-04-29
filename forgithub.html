@@ -1,0 +1,2976 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Image as ImageIcon, Type, Hash, Printer, Plus, Trash2, X, AlertCircle, RefreshCw, Layers, Palette, Edit3, FileOutput, ZoomIn, ZoomOut, Save, Upload, Bold, Italic, AlignLeft, AlignCenter, AlignRight, Play, Video, Music, Volume2, ArrowLeft, Trophy, Mail, Cloud, CheckCircle2, HelpCircle, LayoutGrid, Shuffle, Maximize, Minimize, History, FileSpreadsheet, Users, QrCode, LogIn } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+
+// --- Firebase Initialization ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
+const GLOBAL_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Premium Tooltip Component ---
+const PremiumTooltip = ({ active }) => {
+  const tooltipRef = useRef(null);
+  const contentRef = useRef('');
+  const [renderContent, setRenderContent] = useState('');
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setIsVisible(false);
+      return;
+    }
+
+    const handleMouseMove = (e) => {
+      const target = e.target.closest('[data-tooltip]');
+      if (target) {
+        const text = target.getAttribute('data-tooltip');
+        if (contentRef.current !== text) {
+          contentRef.current = text;
+          setRenderContent(text);
+          setIsVisible(true);
+        }
+        
+        if (tooltipRef.current) {
+          let x = e.clientX + 15;
+          let y = e.clientY + 15;
+          const rect = tooltipRef.current.getBoundingClientRect();
+          
+          if (x + rect.width > window.innerWidth - 10) x = e.clientX - rect.width - 15;
+          if (y + rect.height > window.innerHeight - 10) y = e.clientY - rect.height - 15;
+          
+          tooltipRef.current.style.transform = `translate(${x}px, ${y}px)`;
+        }
+      } else {
+        if (contentRef.current !== '') {
+          contentRef.current = '';
+          setIsVisible(false);
+          setTimeout(() => setRenderContent(''), 150);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, [active]);
+
+  return (
+    <div
+      ref={tooltipRef}
+      className={`fixed top-0 left-0 z-[99999] pointer-events-none px-3 py-1.5 text-[11px] font-normal text-slate-200 bg-black/60 backdrop-blur-xl rounded-md shadow-2xl border border-white/10 transition-opacity duration-150 ease-in-out whitespace-nowrap tracking-wider flex items-center justify-center ${isVisible && active ? 'opacity-100' : 'opacity-0'}`}
+    >
+      {renderContent}
+    </div>
+  );
+};
+
+// --- Paper Layout Definitions ---
+const PAPER_CONFIGS = {
+  letter: {
+    id: 'letter', name: 'US Letter (8.5" x 11")',
+    portrait: { width: 8.5, height: 11, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 2, label: "6 Cards (2x3 Grid)" },
+      { count: 9, cols: 3, label: "9 Cards (3x3 Grid)" }
+    ]},
+    landscape: { width: 11, height: 8.5, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 3, label: "6 Cards (3x2 Grid)" },
+      { count: 8, cols: 4, label: "8 Cards (4x2 Grid)" }
+    ]}
+  },
+  a4: {
+    id: 'a4', name: 'A4 (8.27" x 11.69")',
+    portrait: { width: 8.27, height: 11.69, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 2, label: "6 Cards (2x3 Grid)" },
+      { count: 9, cols: 3, label: "9 Cards (3x3 Grid)" }
+    ]},
+    landscape: { width: 11.69, height: 8.27, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 3, label: "6 Cards (3x2 Grid)" },
+      { count: 8, cols: 4, label: "8 Cards (4x2 Grid)" }
+    ]}
+  },
+  legal: {
+    id: 'legal', name: 'US Legal (8.5" x 14")',
+    portrait: { width: 8.5, height: 14, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 2, label: "6 Cards (2x3 Grid)" },
+      { count: 9, cols: 3, label: "9 Cards (3x3 Grid)" }
+    ]},
+    landscape: { width: 14, height: 8.5, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 3, label: "6 Cards (3x2 Grid)" },
+      { count: 8, cols: 4, label: "8 Cards (4x2 Grid)" },
+      { count: 10, cols: 5, label: "10 Cards (5x2 Grid)" }
+    ]}
+  },
+  a3: {
+    id: 'a3', name: 'A3 (11.69" x 16.54")',
+    portrait: { width: 11.69, height: 16.54, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 2, label: "6 Cards (2x3 Grid)" },
+      { count: 9, cols: 3, label: "9 Cards (3x3 Grid)" },
+      { count: 12, cols: 3, label: "12 Cards (3x4 Grid)" },
+      { count: 16, cols: 4, label: "16 Cards (4x4 Grid)" }
+    ]},
+    landscape: { width: 16.54, height: 11.69, layouts: [
+      { count: 1, cols: 1, label: "1 Card (Centered)" },
+      { count: 2, cols: 2, label: "2 Cards (2x1 Grid)" },
+      { count: 4, cols: 2, label: "4 Cards (2x2 Grid)" },
+      { count: 6, cols: 3, label: "6 Cards (3x2 Grid)" },
+      { count: 8, cols: 4, label: "8 Cards (4x2 Grid)" },
+      { count: 10, cols: 5, label: "10 Cards (5x2 Grid)" },
+      { count: 12, cols: 4, label: "12 Cards (4x3 Grid)" },
+      { count: 15, cols: 5, label: "15 Cards (5x3 Grid)" },
+      { count: 18, cols: 6, label: "18 Cards (6x3 Grid)" }
+    ]}
+  }
+};
+
+export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [appMode, setAppMode] = useState('editor'); // 'editor', 'host-traditional', 'host-digital', 'join', 'player'
+  const [showPlayModeSelect, setShowPlayModeSelect] = useState(false);
+
+  // URL Parsing to auto-trigger join mode if ?code=XXXXX is in the link
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (code && appMode === 'editor') {
+      setAppMode('join');
+    }
+  }, [appMode]);
+
+  // --- Auth Effect ---
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Auth error", e);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setAuthUser);
+    return () => unsubscribe();
+  }, []);
+
+  // --- State ---
+  const [items, setItems] = useState([]); 
+  const [activeWindow, setActiveWindow] = useState(null); 
+  const [cards, setCards] = useState([]); 
+  
+  // Settings
+  const [gridSize, setGridSize] = useState(5); 
+  const [cardTitle, setCardTitle] = useState("BINGO");
+  const [hasFreeSpace, setHasFreeSpace] = useState(true);
+  const [freeSpaceText, setFreeSpaceText] = useState("FREE");
+  const [cardCount, setCardCount] = useState(1);
+  const [freeSpaceImage, setFreeSpaceImage] = useState(null);
+
+  // Typography Settings
+  const [headerFontUrl, setHeaderFontUrl] = useState(null);
+  const [headerFontColor, setHeaderFontColor] = useState('#ffffff');
+  const [headerFontSize, setHeaderFontSize] = useState(16);
+  const [freeSpaceFontColor, setFreeSpaceFontColor] = useState('#78350f');
+  const [freeSpaceFontSize, setFreeSpaceFontSize] = useState(14);
+  const [cellFontSize, setCellFontSize] = useState(10);
+  const [cellTextAlign, setCellTextAlign] = useState('center');
+
+  // --- Style Settings State ---
+  const [headerImage, setHeaderImage] = useState(null);
+  const [headerScale, setHeaderScale] = useState(100);
+  const [gridlineColor, setGridlineColor] = useState('#94a3b8'); 
+  const [backgroundImage, setBackgroundImage] = useState(null);
+  const [gridImageMode, setGridImageMode] = useState('fit'); 
+  const [gridImageScale, setGridImageScale] = useState(100);
+  const [cardBgColor, setCardBgColor] = useState('#ffffff');
+  const [headerBgColor, setHeaderBgColor] = useState('#0f172a');
+  const [gridThickness, setGridThickness] = useState(1);
+  const [gridStyle, setGridStyle] = useState('classic');
+  const [gridPadding, setGridPadding] = useState(0);
+
+  // --- Extra Elements State ---
+  const [footerText, setFooterText] = useState("Premium Bingo Edition");
+  const [showCardNumber, setShowCardNumber] = useState(false);
+  const [showCreator, setShowCreator] = useState(false);
+  const [creatorName, setCreatorName] = useState("");
+  const [watermark, setWatermark] = useState({ active: false, type: 'text', content: 'DRAFT', opacity: 20, scale: 100 });
+
+  // --- Print Layout State ---
+  const [printPaperSize, setPrintPaperSize] = useState('letter');
+  const [printOrientation, setPrintOrientation] = useState('portrait');
+  const [printCardsPerPage, setPrintCardsPerPage] = useState(4);
+  const [printScaleMode, setPrintScaleMode] = useState('fit');
+  const [printScaleValue, setPrintScaleValue] = useState(100);
+  const [previewZoom, setPreviewZoom] = useState(60);
+  const [previewMode, setPreviewMode] = useState('cards'); 
+  const [printTarget, setPrintTarget] = useState('cards'); 
+  
+  // Call Card specific formatting
+  const [callCardGrid, setCallCardGrid] = useState(5); 
+  const [callCardScale, setCallCardScale] = useState(100);
+
+  // --- Live Editor Zoom State ---
+  const [editorZoom, setEditorZoom] = useState(120);
+  const [cardsZoom, setCardsZoom] = useState(100);
+  const [showLiveCallCard, setShowLiveCallCard] = useState(false);
+
+  // --- Custom Font State ---
+  const [customFontUrl, setCustomFontUrl] = useState(null);
+
+  // --- Cell Editor State ---
+  const [cellEditor, setCellEditor] = useState(null); 
+
+  // --- Modal Inputs State ---
+  const [wordInput, setWordInput] = useState('');
+  const [wordBold, setWordBold] = useState(false);
+  const [wordItalic, setWordItalic] = useState(false);
+  const [numInput, setNumInput] = useState('');
+  
+  // --- Project Name State ---
+  const [projectName, setProjectName] = useState('Premium Bingo Card 1');
+  const [backupEmail, setBackupEmail] = useState('');
+  
+  // --- UI Toggles ---
+  const [showTooltips, setShowTooltips] = useState(true);
+
+  // --- Notification Toast State ---
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // --- Snapshot State Refs for Undo/Shortcuts ---
+  const stateRef = useRef({});
+  const historyRef = useRef([]);
+
+  stateRef.current = {
+    items, cards, gridSize, cardTitle, hasFreeSpace, freeSpaceText, cardCount, freeSpaceImage,
+    headerImage, headerScale, gridlineColor, backgroundImage, gridImageMode, gridImageScale,
+    cardBgColor, headerBgColor, gridThickness, gridStyle, gridPadding, footerText,
+    showCardNumber, showCreator, creatorName, watermark, printPaperSize, printOrientation,
+    printCardsPerPage, printScaleMode, printScaleValue, customFontUrl,
+    headerFontUrl, headerFontColor, headerFontSize, freeSpaceFontColor, freeSpaceFontSize,
+    cellFontSize, cellTextAlign, projectName, printTarget, callCardGrid, callCardScale,
+    showLiveCallCard, backupEmail, showTooltips
+  };
+
+  useEffect(() => {
+    const activePaper = PAPER_CONFIGS[printPaperSize][printOrientation];
+    const validCounts = activePaper.layouts.map(l => l.count);
+    setPrintCardsPerPage(prev => {
+      if (!validCounts.includes(prev)) {
+        if (printPaperSize === 'a3') return validCounts.includes(8) ? 8 : validCounts[validCounts.length - 1];
+        return validCounts.includes(4) ? 4 : validCounts[validCounts.length - 1];
+      }
+      return prev;
+    });
+  }, [printPaperSize, printOrientation]);
+
+  const getEffectiveScale = () => {
+    if (printScaleMode === 'original') return 1;
+    if (printScaleMode === 'shrink') return 0.9;
+    if (printScaleMode === 'manual') return printScaleValue / 100;
+    if (printScaleMode === 'fit') {
+      const config = PAPER_CONFIGS[printPaperSize][printOrientation];
+      const layout = config.layouts.find(l => l.count === printCardsPerPage) || config.layouts[0];
+      const cols = layout.cols;
+      const rows = Math.ceil(printCardsPerPage / cols);
+      const availableW = config.width - 0.5;
+      const availableH = config.height - 0.5;
+      const maxScaleW = availableW / (cols * 2.5);
+      const maxScaleH = availableH / (rows * 3.5);
+      return Math.min(maxScaleW, maxScaleH) * 0.98; 
+    }
+    return 1;
+  };
+
+  const showToast = (message, type = 'success') => {
+    setToastMessage({ text: message, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const takeSnapshot = () => {
+    historyRef.current.push({ ...stateRef.current });
+    if (historyRef.current.length > 50) historyRef.current.shift();
+  };
+
+  const undo = () => {
+    if (historyRef.current.length === 0) return;
+    const prevState = historyRef.current.pop();
+    restoreState(prevState);
+  };
+
+  useEffect(() => {
+    if (appMode !== 'editor') return; 
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveUI();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [appMode]);
+
+  const loadStandardBingo = () => {
+    if (items.length > 0 && !confirm("This will clear your current items and load standard 1-75 bingo numbers. Continue?")) return;
+    takeSnapshot();
+    const newNums = [];
+    for (let i = 1; i <= 75; i++) {
+      newNums.push({ id: crypto.randomUUID(), type: 'number', content: i.toString(), bold: true });
+    }
+    setItems(newNums);
+    setGridSize(5);
+    setHasFreeSpace(true);
+    setCardTitle("BINGO");
+  };
+
+  const addWords = () => {
+    takeSnapshot();
+    const newWords = wordInput.split('\n').map(w => w.trim()).filter(w => w.length > 0).map(w => ({ 
+      id: crypto.randomUUID(), type: 'word', content: w, bold: wordBold, italic: wordItalic 
+    }));
+    setItems(prev => [...prev, ...newWords]);
+    setWordInput('');
+    setWordBold(false);
+    setWordItalic(false);
+    setActiveWindow(null);
+  };
+
+  const addNumbers = () => {
+    takeSnapshot();
+    const newNums = [];
+    const parts = numInput.split(/[\n,]+/);
+    
+    parts.forEach(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return;
+      if (trimmed.includes('-')) {
+        const [startStr, endStr] = trimmed.split('-');
+        const start = parseInt(startStr);
+        const end = parseInt(endStr);
+        if (!isNaN(start) && !isNaN(end)) {
+          const step = start <= end ? 1 : -1;
+          for (let i = start; start <= end ? i <= end : i >= end; i += step) {
+            newNums.push({ id: crypto.randomUUID(), type: 'number', content: i.toString(), bold: true });
+          }
+        }
+      } else {
+        const n = parseInt(trimmed);
+        if (!isNaN(n)) newNums.push({ id: crypto.randomUUID(), type: 'number', content: n.toString(), bold: true });
+      }
+    });
+
+    if (newNums.length > 0) {
+      setItems(prev => [...prev, ...newNums]);
+      setNumInput('');
+      setActiveWindow(null);
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const files = Array.from(e.target.files);
+    Promise.all(files.map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = ev => resolve({ id: crypto.randomUUID(), type: 'image', content: ev.target.result });
+      reader.readAsDataURL(file);
+    }))).then(newImages => {
+      takeSnapshot();
+      setItems(prev => [...prev, ...newImages]);
+      setActiveWindow(null);
+    });
+  };
+
+  const removeItem = (id) => {
+    takeSnapshot();
+    setItems(prev => prev.filter(item => item.id !== id));
+  };
+  
+  const clearAllItems = () => {
+    if(confirm("Are you sure you want to clear the entire item pool?")) {
+      takeSnapshot();
+      setItems([]); setCards([]);
+    }
+  };
+
+  const handleSingleImage = (e, setter) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setter(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleFontUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setCustomFontUrl(ev.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = null;
+  };
+
+  const handleHeaderFontUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setHeaderFontUrl(ev.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = null;
+  };
+
+  const openSpecialEditor = (type) => {
+    if (type === 'header') {
+      setCellEditor({ id: 'header', type: 'header', content: cardTitle, image: headerImage, scale: headerScale });
+    } else if (type === 'footer') {
+      setCellEditor({ id: 'footer', type: 'footer', content: footerText });
+    }
+  };
+
+  const openCellEditor = (item) => {
+    let editId = item.id;
+    if (item.id.startsWith('blank-')) editId = null; 
+    else if (item.id.startsWith('missing-')) editId = item.id.replace('missing-', '');
+
+    setCellEditor({
+      id: editId,
+      type: item.type === 'blank' ? 'word' : item.type,
+      content: item.content || '',
+      image: item.image || null,
+      bold: item.bold || false,
+      italic: item.italic || false
+    });
+  };
+
+  const saveCellEdit = () => {
+    takeSnapshot();
+    if (cellEditor.id === 'header') {
+      setCardTitle(cellEditor.content || 'BINGO');
+      setHeaderImage(cellEditor.image);
+      if(cellEditor.scale) setHeaderScale(cellEditor.scale);
+    } else if (cellEditor.id === 'footer') {
+      setFooterText(cellEditor.content);
+    } else if (cellEditor.id === 'free') {
+      setFreeSpaceText(cellEditor.content);
+      setFreeSpaceImage(cellEditor.image);
+    } else if (cellEditor.id) {
+      const exists = items.some(i => i.id === cellEditor.id);
+      if (exists) {
+        setItems(items.map(i => i.id === cellEditor.id ? { ...i, type: cellEditor.type, content: cellEditor.content, bold: cellEditor.bold, italic: cellEditor.italic } : i));
+      } else {
+        setItems([...items, { id: cellEditor.id, type: cellEditor.type, content: cellEditor.content, bold: cellEditor.bold, italic: cellEditor.italic }]);
+      }
+    } else {
+      setItems([...items, { id: crypto.randomUUID(), type: cellEditor.type, content: cellEditor.content, bold: cellEditor.bold, italic: cellEditor.italic }]);
+    }
+    setCellEditor(null);
+  };
+
+  const deleteCellItem = () => {
+    takeSnapshot();
+    if (cellEditor.id === 'header') {
+      setCardTitle('BINGO');
+      setHeaderImage(null);
+    } else if (cellEditor.id === 'footer') {
+      setFooterText('Premium Bingo Edition');
+    } else if (cellEditor.id === 'free') {
+      setFreeSpaceText('');
+      setFreeSpaceImage(null);
+    } else if (cellEditor.id) {
+      setItems(items.filter(i => i.id !== cellEditor.id));
+    }
+    setCellEditor(null);
+  };
+
+  const generateCards = () => {
+    const totalCells = gridSize * gridSize;
+    const requiredItems = hasFreeSpace && totalCells % 2 !== 0 ? totalCells - 1 : totalCells;
+    
+    if (items.length === 0) return alert("Please add some words, numbers, or images first!");
+
+    takeSnapshot();
+    const newCards = [];
+    for (let c = 0; c < cardCount; c++) {
+      let poolIds = items.map(i => i.id).sort(() => Math.random() - 0.5);
+      while (poolIds.length < requiredItems) poolIds = [...poolIds, ...items.map(i => i.id).sort(() => Math.random() - 0.5)];
+
+      const gridIds = [];
+      let itemIndex = 0;
+      const centerIndex = Math.floor(totalCells / 2);
+
+      for (let i = 0; i < totalCells; i++) {
+        if (hasFreeSpace && i === centerIndex && totalCells % 2 !== 0) {
+          gridIds.push('free');
+        } else {
+          gridIds.push(poolIds[itemIndex]);
+          itemIndex++;
+        }
+      }
+      newCards.push(gridIds);
+    }
+    setCards(newCards);
+  };
+
+  const generateDefaultGrid = () => {
+    const totalCells = gridSize * gridSize;
+    const defaultGrid = [];
+    const centerIndex = Math.floor(totalCells / 2);
+    let poolIndex = 0;
+
+    for (let i = 0; i < totalCells; i++) {
+      if (hasFreeSpace && i === centerIndex && totalCells % 2 !== 0) {
+        defaultGrid.push({ id: 'free', type: 'free', content: freeSpaceText, image: freeSpaceImage });
+      } else {
+        if (poolIndex < items.length) defaultGrid.push(items[poolIndex]);
+        else defaultGrid.push({ id: `blank-${i}`, type: 'blank', content: '' }); 
+        poolIndex++;
+      }
+    }
+    return defaultGrid;
+  };
+
+  const renderCallCardSheets = () => {
+    const activePaperConfig = PAPER_CONFIGS[printPaperSize][printOrientation];
+    const itemsPerPage = callCardGrid * callCardGrid;
+    const chunks = [];
+    for (let i = 0; i < items.length; i += itemsPerPage) {
+      chunks.push(items.slice(i, i + itemsPerPage));
+    }
+
+    const cellW = (activePaperConfig.width - 0.5) / callCardGrid;
+    const cellH = (activePaperConfig.height - 0.5) / callCardGrid;
+
+    return chunks.map((pageItems, pIdx) => (
+      <div key={`cc-page-${pIdx}`} className="print-sheet bg-white shadow-2xl relative overflow-hidden" style={{
+        width: `${activePaperConfig.width}in`,
+        height: `${activePaperConfig.height}in`,
+        padding: '0.25in',
+        boxSizing: 'border-box',
+        display: 'grid',
+        gridTemplateColumns: `repeat(${callCardGrid}, ${cellW}in)`,
+        gridTemplateRows: `repeat(${callCardGrid}, ${cellH}in)`
+      }}>
+        <div className="no-print absolute -top-8 left-0 w-full text-center text-slate-400 font-mono text-sm tracking-wider">
+          Call Card Page {pIdx + 1} of {chunks.length}
+        </div>
+        {pageItems.map((item, iIdx) => (
+          <div key={`cc-item-${iIdx}`} className="border-[0.5px] border-dashed border-gray-400 flex items-center justify-center p-2 overflow-hidden box-border bg-white relative">
+            {item.type === 'image' ? (
+              <img src={item.content} alt="call-card" style={{ transform: `scale(${callCardScale / 100})`, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            ) : (
+              <span 
+                className="text-slate-900 break-words w-full text-center leading-tight" 
+                style={{ 
+                  transform: `scale(${callCardScale / 100})`, 
+                  fontSize: `${Math.min(cellW, cellH) * 0.25}in`, 
+                  fontWeight: item.bold ? '900' : 'bold', 
+                  fontStyle: item.italic ? 'italic' : 'normal', 
+                  fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' 
+                }}
+              >
+                {item.content}
+              </span>
+            )}
+          </div>
+        ))}
+        {Array.from({ length: itemsPerPage - pageItems.length }).map((_, emptyIdx) => (
+           <div key={`cc-empty-${emptyIdx}`} className="border-[0.5px] border-dashed border-gray-200 bg-gray-50/30"></div>
+        ))}
+      </div>
+    ));
+  };
+
+  const renderItemCounts = () => {
+    const counts = items.reduce((acc, item) => { acc[item.type] = (acc[item.type] || 0) + 1; return acc; }, {});
+    return (
+      <div className="flex gap-4 mb-4 text-sm font-medium text-slate-300">
+        <span className="flex items-center gap-1"><Type size={14}/> Words: {counts.word || 0}</span>
+        <span className="flex items-center gap-1"><Hash size={14}/> Numbers: {counts.number || 0}</span>
+        <span className="flex items-center gap-1"><ImageIcon size={14}/> Images: {counts.image || 0}</span>
+      </div>
+    );
+  };
+
+  const chunkedCards = [];
+  for (let i = 0; i < cards.length; i += printCardsPerPage) chunkedCards.push(cards.slice(i, i + printCardsPerPage));
+
+  const activePaperConfig = PAPER_CONFIGS[printPaperSize][printOrientation];
+  const printScale = getEffectiveScale();
+
+  const getPrintSheetStyle = () => {
+    const layout = activePaperConfig.layouts.find(l => l.count === printCardsPerPage) || activePaperConfig.layouts[0];
+    const cols = layout.cols;
+    const rows = Math.ceil(printCardsPerPage / cols);
+    const cardW = 2.5 * printScale;
+    const cardH = 3.5 * printScale;
+    const availableW = activePaperConfig.width - 0.5;
+    const availableH = activePaperConfig.height - 0.5;
+    const usedW = cols * cardW;
+    const usedH = rows * cardH;
+    const gapX = cols > 1 ? Math.max(0, (availableW - usedW) / (cols - 1)) : 0;
+    const gapY = rows > 1 ? Math.max(0, (availableH - usedH) / (rows - 1)) : 0;
+    const finalGapX = Math.min(0.25, gapX); 
+    const finalGapY = Math.min(0.25, gapY);
+
+    return {
+      display: 'grid',
+      gridTemplateColumns: `repeat(${cols}, ${cardW}in)`,
+      gridTemplateRows: `repeat(${rows}, ${cardH}in)`,
+      justifyContent: 'center',
+      alignContent: 'center',
+      width: `${activePaperConfig.width}in`,
+      height: `${activePaperConfig.height}in`,
+      padding: '0.25in',
+      boxSizing: 'border-box',
+      columnGap: `${finalGapX.toFixed(3)}in`,
+      rowGap: `${finalGapY.toFixed(3)}in`
+    };
+  };
+
+  const performSave = (data) => {
+    const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = data.projectName.trim() ? data.projectName.trim().replace(/[^a-z0-9\s-]/gi, '_') : 'Bingo_Project';
+    a.download = `${safeName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveUI = () => {
+    if (!stateRef.current.projectName.trim()) {
+      showToast("Please name your project first.", "error");
+      document.getElementById("project-name-input")?.focus();
+      return;
+    }
+    performSave(stateRef.current);
+    showToast(`Project "${stateRef.current.projectName}" saved to your device!`);
+  };
+
+  const restoreState = (data) => {
+    if(data.items !== undefined) setItems(data.items);
+    if(data.cards !== undefined) setCards(data.cards);
+    if(data.gridSize !== undefined) setGridSize(data.gridSize);
+    if(data.cardTitle !== undefined) setCardTitle(data.cardTitle);
+    if(data.hasFreeSpace !== undefined) setHasFreeSpace(data.hasFreeSpace);
+    if(data.freeSpaceText !== undefined) setFreeSpaceText(data.freeSpaceText);
+    if(data.cardCount !== undefined) setCardCount(data.cardCount);
+    if(data.freeSpaceImage !== undefined) setFreeSpaceImage(data.freeSpaceImage);
+    if(data.headerImage !== undefined) setHeaderImage(data.headerImage);
+    if(data.headerScale !== undefined) setHeaderScale(data.headerScale);
+    if(data.gridlineColor !== undefined) setGridlineColor(data.gridlineColor);
+    if(data.backgroundImage !== undefined) setBackgroundImage(data.backgroundImage);
+    if(data.gridImageMode !== undefined) setGridImageMode(data.gridImageMode);
+    if(data.gridImageScale !== undefined) setGridImageScale(data.gridImageScale);
+    if(data.cardBgColor !== undefined) setCardBgColor(data.cardBgColor);
+    if(data.headerBgColor !== undefined) setHeaderBgColor(data.headerBgColor);
+    if(data.gridThickness !== undefined) setGridThickness(data.gridThickness);
+    if(data.gridStyle !== undefined) setGridStyle(data.gridStyle);
+    if(data.gridPadding !== undefined) setGridPadding(data.gridPadding);
+    if(data.footerText !== undefined) setFooterText(data.footerText);
+    if(data.showCardNumber !== undefined) setShowCardNumber(data.showCardNumber);
+    if(data.showCreator !== undefined) setShowCreator(data.showCreator);
+    if(data.creatorName !== undefined) setCreatorName(data.creatorName);
+    if(data.watermark !== undefined) setWatermark(data.watermark);
+    if(data.printPaperSize !== undefined) setPrintPaperSize(data.printPaperSize);
+    if(data.printOrientation !== undefined) setPrintOrientation(data.printOrientation);
+    if(data.printCardsPerPage !== undefined) setPrintCardsPerPage(data.printCardsPerPage);
+    if(data.printScaleMode !== undefined) setPrintScaleMode(data.printScaleMode);
+    if(data.printScaleValue !== undefined) setPrintScaleValue(data.printScaleValue);
+    if(data.customFontUrl !== undefined) setCustomFontUrl(data.customFontUrl);
+    if(data.headerFontUrl !== undefined) setHeaderFontUrl(data.headerFontUrl);
+    if(data.headerFontColor !== undefined) setHeaderFontColor(data.headerFontColor);
+    if(data.headerFontSize !== undefined) setHeaderFontSize(data.headerFontSize);
+    if(data.freeSpaceFontColor !== undefined) setFreeSpaceFontColor(data.freeSpaceFontColor);
+    if(data.freeSpaceFontSize !== undefined) setFreeSpaceFontSize(data.freeSpaceFontSize);
+    if(data.cellFontSize !== undefined) setCellFontSize(data.cellFontSize);
+    if(data.cellTextAlign !== undefined) setCellTextAlign(data.cellTextAlign);
+    if(data.projectName !== undefined) setProjectName(data.projectName);
+    if(data.printTarget !== undefined) setPrintTarget(data.printTarget);
+    if(data.callCardGrid !== undefined) setCallCardGrid(data.callCardGrid);
+    if(data.callCardScale !== undefined) setCallCardScale(data.callCardScale);
+    if(data.showLiveCallCard !== undefined) setShowLiveCallCard(data.showLiveCallCard);
+    if(data.backupEmail !== undefined) setBackupEmail(data.backupEmail);
+    if(data.showTooltips !== undefined) setShowTooltips(data.showTooltips);
+  };
+
+  const loadProject = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        takeSnapshot();
+        restoreState(data);
+        showToast("Project loaded successfully!");
+      } catch (err) {
+        showToast("Invalid project file.", "error");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null; 
+  };
+
+  const handlePrint = () => {
+    if (printTarget === 'cards' && cards.length === 0) return showToast("Please generate bingo cards first before printing.", "error");
+    if (printTarget === 'callcards' && items.length === 0) return showToast("Please add items to your pool to print call cards.", "error");
+    window.print();
+  };
+
+  const handleStartPlay = () => {
+    if (items.length === 0) return showToast("Please add items to your pool before starting the game.", "error");
+    setShowPlayModeSelect(true);
+  };
+
+  const handleCloudBackup = () => {
+    if (!backupEmail || !backupEmail.includes('@')) {
+      showToast("Please enter a valid email address.", "error");
+      return;
+    }
+    if (cards.length === 0 && printTarget === 'cards') {
+      showToast("Please generate your bingo cards before backing them up.", "error");
+      return;
+    }
+    showToast(`Success! Backup link sent to ${backupEmail} and saved to Google Drive.`, "success");
+  };
+
+  // === RENDER HOST GAME MODES ===
+  if (appMode.startsWith('host-')) {
+    const modeType = appMode.replace('host-', '');
+    return <HostMode 
+      key={appMode} // Force remount if switching between traditional/digital
+      modeType={modeType}
+      items={items} 
+      customFontUrl={customFontUrl} 
+      gridSize={gridSize} 
+      hasFreeSpace={hasFreeSpace} 
+      freeSpaceText={freeSpaceText} 
+      freeSpaceImage={freeSpaceImage} 
+      backupEmail={backupEmail}
+      cardBgColor={cardBgColor}
+      gridlineColor={gridlineColor}
+      headerFontColor={headerFontColor}
+      headerBgColor={headerBgColor}
+      cellFontSize={cellFontSize}
+      authUser={authUser}
+      db={db}
+      appId={GLOBAL_APP_ID}
+      onExit={() => setAppMode('editor')} 
+    />;
+  }
+
+  // === RENDER PLAYER JOIN MODE ===
+  if (appMode === 'join') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialCode = urlParams.get('code') || '';
+    return <JoinMode initialCode={initialCode} onJoin={(code, name) => setAppMode(`player-${code}-${name}`)} onExit={() => setAppMode('editor')} />;
+  }
+
+  // === RENDER DIGITAL PLAYER MODE ===
+  if (appMode.startsWith('player-')) {
+    const parts = appMode.split('-');
+    const code = parts[1];
+    const name = parts.slice(2).join('-');
+    return <PlayerMode 
+      roomCode={code} 
+      playerName={name}
+      authUser={authUser}
+      db={db}
+      appId={GLOBAL_APP_ID}
+      onExit={() => setAppMode('editor')}
+      customFontUrl={customFontUrl}
+    />;
+  }
+
+  // === RENDER EDITOR MODE ===
+  return (
+    <div className="h-screen flex flex-col bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500/30 print:h-auto print:block print:bg-white overflow-hidden relative">
+      
+      <style>{`
+        @media print {
+          @page { size: ${activePaperConfig.width}in ${activePaperConfig.height}in; margin: 0.25in; }
+          body { background-color: white !important; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .no-print { display: none !important; }
+          .print-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; border: none !important; background: none !important; width: auto !important; height: auto !important; }
+          .screen-zoom { transform: none !important; }
+        }
+        .screen-zoom { transform: scale(var(--zoom)); transform-origin: top center; }
+        ${customFontUrl ? `
+          @font-face {
+            font-family: 'CustomBingoFont';
+            src: url('${customFontUrl}');
+          }
+        ` : ''}
+        ${headerFontUrl ? `
+          @font-face {
+            font-family: 'CustomHeaderFont';
+            src: url('${headerFontUrl}');
+          }
+        ` : ''}
+      `}</style>
+
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className={`flex items-center gap-3 px-5 py-3 rounded-full shadow-2xl border ${toastMessage.type === 'error' ? 'bg-red-900/90 border-red-500/50 text-red-200' : 'bg-emerald-900/90 border-emerald-500/50 text-emerald-200'} backdrop-blur-md`}>
+            {toastMessage.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+            <span className="text-sm font-medium">{toastMessage.text}</span>
+          </div>
+        </div>
+      )}
+
+      <header className="no-print flex-shrink-0 border-b border-white/10 bg-slate-900/50 backdrop-blur-md z-10 py-3">
+        <div className="max-w-[1400px] mx-auto px-4 lg:px-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-amber-400 to-orange-600 p-2 rounded-lg shadow-lg shadow-orange-500/20"><Layers size={24} className="text-white" /></div>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-amber-200 to-orange-400 bg-clip-text text-transparent hidden xl:block">Premium Bingo Forge</h1>
+          </div>
+          
+          <div className="flex items-center gap-2 lg:gap-4 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
+            <div className="flex items-center gap-2 bg-black/20 p-1.5 rounded-xl border border-white/5 whitespace-nowrap">
+              <input 
+                id="project-name-input"
+                type="text" 
+                value={projectName} 
+                onChange={e => setProjectName(e.target.value)} 
+                placeholder="Project Name..."
+                data-tooltip="Enter a unique name for your project file"
+                className="bg-transparent border-0 px-2 py-1 text-sm text-white focus:outline-none focus:ring-0 w-28 lg:w-40 placeholder-slate-500 transition-all"
+              />
+              <button onClick={handleSaveUI} data-tooltip="Save your project to your device (.json)" className="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors shadow-md">
+                <Save size={14} />
+              </button>
+              <label data-tooltip="Load a previously saved project (.json)" className="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-md">
+                <Upload size={14} />
+                <input type="file" accept=".json" onChange={loadProject} className="hidden" />
+              </label>
+            </div>
+
+            <div className="hidden md:flex items-center gap-2 bg-black/20 p-1.5 rounded-xl border border-white/5 whitespace-nowrap">
+              <Mail size={14} className="text-slate-400 ml-2" />
+              <input 
+                type="email" 
+                value={backupEmail} 
+                onChange={e => setBackupEmail(e.target.value)} 
+                placeholder="Backup Email..."
+                data-tooltip="Enter your email to receive a cloud backup link"
+                className="bg-transparent border-0 px-2 py-1 text-sm text-white focus:outline-none focus:ring-0 w-32 lg:w-48 placeholder-slate-500 transition-all"
+              />
+              <button onClick={handleCloudBackup} data-tooltip="Sync project and send backup copy to email" className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition-colors shadow-md group">
+                <Cloud size={14} className="group-hover:scale-110 transition-transform" />
+                <span className="hidden lg:inline text-xs font-bold tracking-wide">Sync Backup</span>
+              </button>
+            </div>
+
+            <div className="hidden md:flex items-center">
+              <button 
+                onClick={() => setShowTooltips(!showTooltips)} 
+                data-tooltip={showTooltips ? "Turn off helpful UI tips" : "Turn on helpful UI tips"} 
+                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors shadow-md border ${showTooltips ? 'bg-slate-700/50 border-white/10 text-white' : 'bg-transparent border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+              >
+                <HelpCircle size={14} />
+                <span className="hidden lg:inline text-xs font-medium tracking-wide">Tips</span>
+              </button>
+            </div>
+            
+            <div className="w-px h-10 bg-white/10 mx-1 hidden sm:block"></div>
+            
+            <div className="flex flex-col sm:flex-row gap-1.5">
+              <button onClick={() => setAppMode('join')} data-tooltip="Join an active game using a room code" className="flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 sm:py-1.5 rounded-lg transition-all shadow-lg shadow-cyan-500/20 font-bold text-xs tracking-wide whitespace-nowrap">
+                <LogIn size={14} /> JOIN GAME
+              </button>
+              <button onClick={handlePrint} data-tooltip="Generate and open the print dialog for PDF saving" className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 sm:py-1.5 rounded-lg transition-all shadow-lg shadow-emerald-500/20 font-bold text-xs tracking-wide whitespace-nowrap">
+                <Printer size={14} /> Save / Print PDF
+              </button>
+              <button onClick={handleStartPlay} data-tooltip="Launch interactive full-screen digital draw mode" className="flex items-center justify-center gap-2 bg-pink-600 hover:bg-pink-500 text-white px-4 py-2 sm:py-1.5 rounded-lg transition-all shadow-lg shadow-pink-500/20 font-bold text-xs tracking-wide group whitespace-nowrap">
+                <Play size={14} className="fill-white group-hover:scale-110 transition-transform" /> PLAY BINGO
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="no-print flex-1 lg:min-h-0 max-w-7xl w-full mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-y-auto lg:overflow-hidden">
+        
+        <div className="lg:col-span-4 lg:h-full lg:overflow-y-auto custom-scrollbar lg:pr-3 pb-6 space-y-6">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><Settings size={100} /></div>
+            <h2 className="text-lg font-semibold mb-5 flex items-center gap-2"><Settings size={18} className="text-amber-400"/> Card Settings</h2>
+            
+            <div className="space-y-4 relative z-10">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Card Title</label>
+                <input type="text" value={cardTitle} onChange={e => setCardTitle(e.target.value)} data-tooltip="Set the main title displayed at the top of the cards" className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div data-tooltip="Choose between 3x3, 4x4, or 5x5 grid layouts">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Grid Size</label>
+                  <select value={gridSize} onChange={e => setGridSize(parseInt(e.target.value))} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-white">
+                    <option value={3} className="bg-slate-800">3 x 3</option><option value={4} className="bg-slate-800">4 x 4</option><option value={5} className="bg-slate-800">5 x 5</option>
+                  </select>
+                </div>
+                <div data-tooltip="Total number of unique randomized cards to produce">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Cards to Generate</label>
+                  <input type="number" min="1" max="500" value={cardCount} onChange={e => setCardCount(parseInt(e.target.value) || 1)} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                </div>
+              </div>
+              {gridSize % 2 !== 0 && (
+                <div className="flex items-center gap-3 pt-2" data-tooltip="Toggle a dedicated free space in the center cell">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={hasFreeSpace} onChange={() => setHasFreeSpace(!hasFreeSpace)} />
+                    <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                  <span className="text-sm font-medium text-slate-300">Center Free Space</span>
+                </div>
+              )}
+              {hasFreeSpace && gridSize % 2 !== 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Free Space Text</label>
+                    <input type="text" value={freeSpaceText} onChange={e => setFreeSpaceText(e.target.value)} data-tooltip="Custom text for the free space" className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                  </div>
+                  <div data-tooltip="Upload an image to cover the free space">
+                    <label className="block text-xs font-medium text-slate-400 mb-1 flex justify-between">
+                      Free Space Image {freeSpaceImage && <button onClick={() => setFreeSpaceImage(null)} className="text-red-400 hover:text-red-300">Remove</button>}
+                    </label>
+                    <input type="file" accept="image/*" onChange={(e) => handleSingleImage(e, setFreeSpaceImage)} className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20" />
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-white/10 mt-4 space-y-4">
+                <label className="block text-xs font-medium text-slate-400">Typography Controls</label>
+                
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1 flex justify-between">
+                    Custom Font (Title & FREE)
+                    {headerFontUrl && <button onClick={() => setHeaderFontUrl(null)} className="text-red-400 hover:text-red-300">Remove</button>}
+                  </label>
+                  <label data-tooltip="Upload a custom font file (.ttf, .otf) for the Title and FREE text" className="flex items-center justify-center w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs transition-all cursor-pointer text-indigo-300 hover:bg-white/10">
+                    Upload Font (.ttf, .otf)
+                    <input type="file" accept=".ttf,.otf,.woff,.woff2" onChange={handleHeaderFontUpload} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div data-tooltip="Pick a custom color for the Title text">
+                    <label className="block text-[10px] text-slate-400 mb-1">Title Color</label>
+                    <div className="flex items-center gap-2 bg-black/20 px-2 py-1.5 rounded-lg border border-white/5">
+                      <input type="color" value={headerFontColor} onChange={e => setHeaderFontColor(e.target.value)} className="w-5 h-5 rounded cursor-pointer bg-transparent border-0 p-0" />
+                      <span className="text-[10px] text-slate-300 uppercase truncate">{headerFontColor}</span>
+                    </div>
+                  </div>
+                  <div data-tooltip="Pick a custom color for the FREE space text">
+                    <label className="block text-[10px] text-slate-400 mb-1">FREE Color</label>
+                    <div className="flex items-center gap-2 bg-black/20 px-2 py-1.5 rounded-lg border border-white/5">
+                      <input type="color" value={freeSpaceFontColor} onChange={e => setFreeSpaceFontColor(e.target.value)} className="w-5 h-5 rounded cursor-pointer bg-transparent border-0 p-0" />
+                      <span className="text-[10px] text-slate-300 uppercase truncate">{freeSpaceFontColor}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Title Size: {headerFontSize}px</label>
+                    <input type="range" min="8" max="32" value={headerFontSize} onChange={e => setHeaderFontSize(Number(e.target.value))} data-tooltip="Adjust the font size using the slider" className="w-full accent-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">FREE Size: {freeSpaceFontSize}px</label>
+                    <input type="range" min="6" max="24" value={freeSpaceFontSize} onChange={e => setFreeSpaceFontSize(Number(e.target.value))} data-tooltip="Adjust the font size using the slider" className="w-full accent-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Cell Text Size: {cellFontSize}px</label>
+                    <input type="range" min="4" max="36" value={cellFontSize} onChange={e => setCellFontSize(Number(e.target.value))} data-tooltip="Adjust the font size of the bingo grid items" className="w-full accent-indigo-500" />
+                  </div>
+                  <div data-tooltip="Align bingo items to the left, center, or right">
+                    <label className="block text-[10px] text-slate-400 mb-1">Cell Alignment</label>
+                    <div className="flex gap-1 bg-black/20 p-1 rounded-lg border border-white/5">
+                      <button onClick={() => setCellTextAlign('left')} className={`flex-1 flex justify-center py-1 rounded transition-colors ${cellTextAlign === 'left' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}><AlignLeft size={14} /></button>
+                      <button onClick={() => setCellTextAlign('center')} className={`flex-1 flex justify-center py-1 rounded transition-colors ${cellTextAlign === 'center' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}><AlignCenter size={14} /></button>
+                      <button onClick={() => setCellTextAlign('right')} className={`flex-1 flex justify-center py-1 rounded transition-colors ${cellTextAlign === 'right' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}><AlignRight size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <h2 className="text-lg font-semibold mb-5 flex items-center gap-2"><Palette size={18} className="text-pink-400"/> Style Settings</h2>
+            <div className="space-y-4 relative z-10">
+              <div className="grid grid-cols-2 gap-4">
+                <div data-tooltip="Main background color behind the grid">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Base Color</label>
+                  <div className="flex items-center gap-3 bg-black/20 px-2 py-1.5 rounded-lg border border-white/5">
+                    <input type="color" value={cardBgColor} onChange={e => setCardBgColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer bg-transparent border-0 p-0" />
+                    <span className="text-xs text-slate-300 uppercase">{cardBgColor}</span>
+                  </div>
+                </div>
+                <div data-tooltip="Background color for the title and footer areas">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Header Color</label>
+                  <div className="flex items-center gap-3 bg-black/20 px-2 py-1.5 rounded-lg border border-white/5">
+                    <input type="color" value={headerBgColor} onChange={e => setHeaderBgColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer bg-transparent border-0 p-0" />
+                    <span className="text-xs text-slate-300 uppercase">{headerBgColor}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div data-tooltip="Color of the lines dividing the bingo cells">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Grid Color</label>
+                  <div className="flex items-center gap-3 bg-black/20 px-2 py-1.5 rounded-lg border border-white/5">
+                    <input type="color" value={gridlineColor} onChange={e => setGridlineColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer bg-transparent border-0 p-0" />
+                    <span className="text-xs text-slate-300 uppercase">{gridlineColor}</span>
+                  </div>
+                </div>
+                <div data-tooltip="Toggle between connected gridlines or modern separated boxes">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Grid Shape</label>
+                  <div className="flex gap-1 bg-black/20 p-1 rounded-lg border border-white/5">
+                    <button onClick={() => setGridStyle('classic')} className={`flex-1 py-1 text-[10px] rounded transition-colors ${gridStyle === 'classic' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}>Classic</button>
+                    <button onClick={() => setGridStyle('rounded')} className={`flex-1 py-1 text-[10px] rounded transition-colors ${gridStyle === 'rounded' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}>Rounded</button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-xs font-medium text-slate-400 mb-2">Grid Thickness: {gridThickness}px</label><input type="range" min="0" max="8" value={gridThickness} onChange={e => setGridThickness(Number(e.target.value))} data-tooltip="Adjust the thickness of the grid lines" className="w-full accent-pink-500" /></div>
+                <div><label className="block text-xs font-medium text-slate-400 mb-2">Grid Margin: {gridPadding}px</label><input type="range" min="0" max="24" value={gridPadding} onChange={e => setGridPadding(Number(e.target.value))} data-tooltip="Adjust the spacing around the grid" className="w-full accent-pink-500" /></div>
+              </div>
+              <div data-tooltip="Choose how background images should scale inside the grid">
+                <label className="block text-xs font-medium text-slate-400 mb-2">Grid Image Sizing</label>
+                <div className="flex gap-2 mb-2">
+                  <button onClick={() => setGridImageMode('fit')} className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${gridImageMode === 'fit' ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Fit to Grid</button>
+                  <button onClick={() => setGridImageMode('fill')} className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${gridImageMode === 'fill' ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Fill Box</button>
+                  <button onClick={() => setGridImageMode('manual')} className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${gridImageMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Manual</button>
+                </div>
+                {gridImageMode === 'manual' && (
+                  <div className="flex items-center gap-2 mt-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                    <span className="text-xs text-slate-400">Scale:</span>
+                    <input type="range" min="10" max="300" value={gridImageScale} onChange={e => setGridImageScale(e.target.value)} className="flex-1 accent-indigo-500" />
+                    <span className="text-xs text-slate-400 w-8 text-right">{gridImageScale}%</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-white/10 mt-4">
+                <label className="block text-xs font-medium text-slate-400 mb-2">Extra Elements (Header/Footer)</label>
+                <div className="flex gap-2 mb-2" data-tooltip="Toggle additional information displays on the cards">
+                  <button onClick={() => setShowCardNumber(!showCardNumber)} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${showCardNumber ? 'bg-pink-600 text-white shadow-lg' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>
+                    {showCardNumber ? 'Hide Card No.' : 'Add Card No.'}
+                  </button>
+                  <button onClick={() => setShowCreator(!showCreator)} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${showCreator ? 'bg-pink-600 text-white shadow-lg' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>
+                    {showCreator ? 'Hide Creator' : 'Add Creator'}
+                  </button>
+                  <button onClick={() => setWatermark({...watermark, active: !watermark.active})} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${watermark.active ? 'bg-pink-600 text-white shadow-lg' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>
+                    {watermark.active ? 'Hide Watermark' : 'Add Watermark'}
+                  </button>
+                </div>
+
+                {showCreator && (
+                  <div className="mb-2 animate-in fade-in slide-in-from-top-2">
+                    <input type="text" placeholder="Creator Name (e.g. John Doe)" value={creatorName} onChange={e => setCreatorName(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-pink-500 text-white" />
+                  </div>
+                )}
+
+                {watermark.active && (
+                  <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-3 mt-2 animate-in fade-in slide-in-from-top-2">
+                    <div className="flex gap-2">
+                      <button onClick={() => setWatermark({...watermark, type: 'text'})} className={`flex-1 py-1 text-[10px] rounded transition-colors ${watermark.type === 'text' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}>Text</button>
+                      <button onClick={() => setWatermark({...watermark, type: 'image'})} className={`flex-1 py-1 text-[10px] rounded transition-colors ${watermark.type === 'image' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}>Image</button>
+                    </div>
+                    
+                    {watermark.type === 'text' ? (
+                      <input type="text" value={watermark.content} onChange={e => setWatermark({...watermark, content: e.target.value})} placeholder="DRAFT" className="w-full bg-black/30 border border-white/10 rounded-md px-3 py-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500" />
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 bg-black/30 p-1.5 rounded-md border border-white/10">
+                        <input type="file" accept="image/*" onChange={(e) => handleSingleImage(e, res => setWatermark({...watermark, content: res}))} className="w-full text-[10px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:bg-white/10 file:text-white" />
+                        {watermark.content && watermark.type === 'image' && <button onClick={() => setWatermark({...watermark, content: ''})} className="text-red-400 text-[10px] pr-2 hover:text-red-300">Clear</button>}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">Opacity: {watermark.opacity}%</label>
+                          <input type="range" min="1" max="100" value={watermark.opacity} onChange={e => setWatermark({...watermark, opacity: Number(e.target.value)})} className="w-full accent-indigo-500" />
+                      </div>
+                      <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">Scale: {watermark.scale}%</label>
+                          <input type="range" min="10" max="300" value={watermark.scale} onChange={e => setWatermark({...watermark, scale: Number(e.target.value)})} className="w-full accent-indigo-500" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-lg font-semibold flex items-center gap-2"><Layers size={18} className="text-indigo-400"/> Item Pool</h2>
+              {items.length > 0 && <button onClick={clearAllItems} data-tooltip="Delete all items currently in the pool" className="text-xs text-red-400 hover:text-red-300">Clear All</button>}
+            </div>
+            {renderItemCounts()}
+
+            <div className="flex gap-2 mb-4">
+              <button onClick={loadStandardBingo} data-tooltip="Instantly fill the pool with traditional bingo numbers 1 to 75" className="flex-1 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/30 text-indigo-200 rounded-lg text-xs font-medium transition-all">
+                🎲 Load Standard 1-75
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <button onClick={() => setActiveWindow('words')} data-tooltip="Open menu to add new word items into the pool" className="flex flex-col items-center justify-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"><Type size={20} className="text-blue-400 group-hover:scale-110"/><span className="text-xs font-medium">Add Words</span></button>
+              <button onClick={() => setActiveWindow('numbers')} data-tooltip="Open menu to automatically generate number ranges" className="flex flex-col items-center justify-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"><Hash size={20} className="text-green-400 group-hover:scale-110"/><span className="text-xs font-medium text-center">Add Numbers</span></button>
+              <button onClick={() => setActiveWindow('images')} data-tooltip="Upload pictures directly into the pool" className="flex flex-col items-center justify-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"><ImageIcon size={20} className="text-purple-400 group-hover:scale-110"/><span className="text-xs font-medium">Add Images</span></button>
+              <label data-tooltip="Upload custom font (.ttf, .otf) for the main bingo grid items" className="flex flex-col items-center justify-center gap-2 p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group cursor-pointer">
+                <Type size={20} className="text-teal-400 group-hover:scale-110 transition-transform" />
+                <span className="text-xs font-medium text-center">Upload Font</span>
+                <input type="file" accept=".ttf,.otf,.woff,.woff2" onChange={handleFontUpload} className="hidden" />
+              </label>
+            </div>
+
+            {customFontUrl && (
+              <div className="mb-4 flex items-center justify-between bg-teal-500/10 border border-teal-500/20 px-3 py-2 rounded-lg">
+                <span className="text-xs text-teal-200">Custom Font Loaded</span>
+                <button onClick={() => setCustomFontUrl(null)} className="text-xs text-red-400 hover:text-red-300">Remove</button>
+              </div>
+            )}
+
+            {items.length > 0 && (
+              <div className="mb-6 animate-in fade-in zoom-in-95 duration-200">
+                <label className="block text-xs font-medium text-slate-400 mb-2">Current Items (Click to edit)</label>
+                <div data-tooltip="Click any item here to edit or remove it" className="bg-black/20 p-3 rounded-xl border border-white/5 max-h-48 overflow-y-auto custom-scrollbar flex flex-wrap gap-2">
+                  {items.map(item => (
+                    <div 
+                      key={item.id} 
+                      onClick={() => openCellEditor(item)}
+                      className="group relative flex items-center bg-slate-800 hover:bg-slate-700 cursor-pointer border border-white/10 hover:border-indigo-500/50 rounded-md overflow-hidden text-xs pr-6 transition-all"
+                    >
+                      {item.type === 'image' ? (
+                        <img src={item.content} alt="pool item" className="h-6 w-6 object-cover bg-white" />
+                      ) : (
+                        <span className="px-2 py-1 max-w-[100px] truncate" style={{ fontWeight: item.bold ? '900' : (item.type === 'number' ? 'bold' : 'normal'), fontStyle: item.italic ? 'italic' : 'normal'}}>{item.content}</span>
+                      )}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); removeItem(item.id); }} 
+                        className="absolute right-0 top-0 bottom-0 px-1.5 bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <button onClick={() => {
+                generateCards();
+                setPrintTarget('cards');
+                setPreviewMode('cards');
+              }} data-tooltip="Randomize and create bingo cards from the pool" className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                <RefreshCw size={18} className={items.length > 0 ? "" : "opacity-50"} /> Generate {cardCount} {cardCount === 1 ? 'Card' : 'Cards'}
+              </button>
+              
+              <button onClick={() => {
+                if (items.length === 0) return showToast("Please add items to your pool first!", "error");
+                setPrintTarget('callcards');
+                setPreviewMode('callcards');
+              }} data-tooltip="Create printable sheets containing all pool items for manual drawing" className="w-full py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                <Printer size={16} className={items.length > 0 ? "" : "opacity-50"} /> Generate Call Cards
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-emerald-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <h2 className="text-lg font-semibold mb-5 flex items-center gap-2"><FileOutput size={18} className="text-emerald-400"/> Print Setup</h2>
+            <div className="space-y-4 relative z-10">
+              <div data-tooltip="Select the physical dimensions of the printing paper">
+                <label className="block text-xs font-medium text-slate-400 mb-1">Paper Size</label>
+                <select value={printPaperSize} onChange={e => setPrintPaperSize(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-white">
+                  {Object.values(PAPER_CONFIGS).map(p => <option key={p.id} value={p.id} className="bg-slate-800">{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Paper Orientation</label>
+                <div className="flex gap-2" data-tooltip="Change document layout mode">
+                  <button onClick={() => setPrintOrientation('portrait')} className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${printOrientation === 'portrait' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-black/20 text-slate-300 hover:bg-white/10 border border-white/10'}`}>Portrait</button>
+                  <button onClick={() => setPrintOrientation('landscape')} className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${printOrientation === 'landscape' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-black/20 text-slate-300 hover:bg-white/10 border border-white/10'}`}>Landscape</button>
+                </div>
+              </div>
+              <div data-tooltip="Choose how many bingo cards to squeeze onto a single sheet">
+                <label className="block text-xs font-medium text-slate-400 mb-1 flex justify-between">Cards Per Page <span>Max: {activePaperConfig.layouts[activePaperConfig.layouts.length - 1].count}</span></label>
+                <select value={printCardsPerPage} onChange={e => setPrintCardsPerPage(Number(e.target.value))} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-white">
+                  {activePaperConfig.layouts.map(l => <option key={l.count} value={l.count} className="bg-slate-800">{l.label}</option>)}
+                </select>
+              </div>
+              <div className="pt-2 border-t border-white/10 mt-4" data-tooltip="Control how the cards shrink or fit the page boundaries">
+                <label className="block text-xs font-medium text-slate-400 mb-2">Print Scaling (Card Size)</label>
+                <div className="flex gap-2 mb-2">
+                  <button onClick={() => setPrintScaleMode('original')} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${printScaleMode === 'original' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Original</button>
+                  <button onClick={() => setPrintScaleMode('fit')} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${printScaleMode === 'fit' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Fit Page</button>
+                  <button onClick={() => setPrintScaleMode('shrink')} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${printScaleMode === 'shrink' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Shrink</button>
+                  <button onClick={() => setPrintScaleMode('manual')} className={`flex-1 py-1.5 text-[10px] rounded-md transition-colors ${printScaleMode === 'manual' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'}`}>Manual</button>
+                </div>
+                {printScaleMode === 'manual' && (
+                  <div className="flex items-center gap-2 mt-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                    <span className="text-xs text-slate-400">Scale:</span>
+                    <input type="range" min="30" max="300" value={printScaleValue} onChange={e => setPrintScaleValue(e.target.value)} className="flex-1 accent-emerald-500" />
+                    <span className="text-xs text-slate-400 w-8 text-right">{printScaleValue}%</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-8 lg:h-full lg:overflow-y-auto custom-scrollbar lg:pl-3 pb-6 space-y-8">
+          
+          <div>
+            <div className="flex justify-between items-end mb-4">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2 text-amber-400"><Edit3 size={20} /> Master Template</h2>
+                <p className="text-sm text-slate-400 mt-1">Click cells, header, or footer to instantly edit.</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setShowLiveCallCard(!showLiveCallCard)}
+                  data-tooltip="Toggle a split view to see the template alongside the call cards"
+                  className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors ${showLiveCallCard ? 'bg-amber-500 text-slate-900 border-amber-500' : 'bg-black/20 text-slate-400 border-white/5 hover:text-amber-400 hover:border-amber-400/30 shadow-inner'}`}
+                >
+                  <Layers size={14} /> Side-by-Side Call Card
+                </button>
+                <div className="flex items-center gap-2 bg-black/20 px-3 py-1.5 rounded-xl border border-white/5 shadow-inner" data-tooltip="Zoom in/out of the master template preview">
+                  <span className="text-xs text-slate-400 font-medium mr-1">Zoom:</span>
+                  <button onClick={() => setEditorZoom(z => Math.max(50, Number(z) - 10))} className="text-slate-400 hover:text-amber-400 transition-colors"><ZoomOut size={16} /></button>
+                  <input type="range" min="50" max="250" value={editorZoom} onChange={e => setEditorZoom(Number(e.target.value))} className="w-16 lg:w-24 accent-amber-500" />
+                  <button onClick={() => setEditorZoom(z => Math.min(250, Number(z) + 10))} className="text-slate-400 hover:text-amber-400 transition-colors"><ZoomIn size={16} /></button>
+                  <span className="text-xs text-slate-400 font-mono w-8 text-right">{editorZoom}%</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-center border-2 border-dashed border-amber-500/30 rounded-2xl p-8 bg-amber-500/5 relative overflow-auto custom-scrollbar min-h-[450px]">
+              <div className="absolute top-4 left-4 bg-amber-500/20 text-amber-300 text-xs px-3 py-1 rounded-full font-medium z-10">Live Editor</div>
+              
+              <div className="flex flex-row items-center justify-center gap-16 min-w-max">
+                <div className="flex flex-col items-center gap-3">
+                  {showLiveCallCard && <span className="text-xs font-bold text-amber-500/80 tracking-widest uppercase bg-amber-500/10 px-4 py-1.5 rounded-full border border-amber-500/20">Bingo Card Template</span>}
+                  <div style={{ width: `${2.5 * (editorZoom / 100)}in`, height: `${3.5 * (editorZoom / 100)}in`, transition: 'width 0.2s, height 0.2s' }}>
+                    <div style={{ transform: `scale(${editorZoom / 100})`, transformOrigin: 'top left', width: '2.5in', height: '3.5in', transition: 'transform 0.2s' }}>
+                      <BingoCard 
+                        grid={generateDefaultGrid()} gridSize={gridSize} title={cardTitle} 
+                        headerImage={headerImage} headerScale={headerScale} 
+                        gridlineColor={gridlineColor} backgroundImage={backgroundImage} 
+                        gridImageMode={gridImageMode} gridImageScale={gridImageScale} 
+                        cardBgColor={cardBgColor} headerBgColor={headerBgColor} 
+                        gridThickness={gridThickness} gridStyle={gridStyle} gridPadding={gridPadding}
+                        footerText={footerText} showCardNumber={showCardNumber} creatorName={showCreator ? creatorName : ''}
+                        cardNumber="Template" watermark={watermark}
+                        onCellClick={openCellEditor} onHeaderClick={() => openSpecialEditor('header')} onFooterClick={() => openSpecialEditor('footer')}
+                        customFontActive={!!customFontUrl}
+                        customHeaderFontActive={!!headerFontUrl} headerFontColor={headerFontColor} headerFontSize={headerFontSize}
+                        freeSpaceFontColor={freeSpaceFontColor} freeSpaceFontSize={freeSpaceFontSize}
+                        cellFontSize={cellFontSize} cellTextAlign={cellTextAlign}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {showLiveCallCard && (
+                  <div className="flex flex-col items-center gap-3 animate-in slide-in-from-right-4 duration-300">
+                    <span className="text-xs font-bold text-amber-500/80 tracking-widest uppercase bg-amber-500/10 px-4 py-1.5 rounded-full border border-amber-500/20">Call Card Preview (Page 1)</span>
+                    <div style={{ width: `${PAPER_CONFIGS[printPaperSize][printOrientation].width * (editorZoom / 100)}in`, height: `${PAPER_CONFIGS[printPaperSize][printOrientation].height * (editorZoom / 100)}in`, transition: 'width 0.2s, height 0.2s' }}>
+                      <div style={{ 
+                        transform: `scale(${editorZoom / 100})`, 
+                        transformOrigin: 'top left', 
+                        width: `${PAPER_CONFIGS[printPaperSize][printOrientation].width}in`, 
+                        height: `${PAPER_CONFIGS[printPaperSize][printOrientation].height}in`, 
+                        padding: '0.25in',
+                        boxSizing: 'border-box',
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${callCardGrid}, ${(PAPER_CONFIGS[printPaperSize][printOrientation].width - 0.5) / callCardGrid}in)`,
+                        gridTemplateRows: `repeat(${callCardGrid}, ${(PAPER_CONFIGS[printPaperSize][printOrientation].height - 0.5) / callCardGrid}in)`,
+                        transition: 'transform 0.2s' 
+                      }} className="bg-white shadow-xl relative overflow-hidden pointer-events-none">
+                        {items.slice(0, callCardGrid * callCardGrid).map((item, iIdx) => (
+                          <div key={`live-cc-item-${iIdx}`} className="border-[0.5px] border-dashed border-gray-400 flex items-center justify-center p-2 overflow-hidden box-border bg-white relative">
+                            {item.type === 'image' ? (
+                              <img src={item.content} alt="call-card" style={{ transform: `scale(${callCardScale / 100})`, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                            ) : (
+                              <span 
+                                className="text-slate-900 break-words w-full text-center leading-tight" 
+                                style={{ 
+                                  transform: `scale(${callCardScale / 100})`, 
+                                  fontSize: `${Math.min((PAPER_CONFIGS[printPaperSize][printOrientation].width - 0.5) / callCardGrid, (PAPER_CONFIGS[printPaperSize][printOrientation].height - 0.5) / callCardGrid) * 0.25}in`, 
+                                  fontWeight: item.bold ? '900' : 'bold', 
+                                  fontStyle: item.italic ? 'italic' : 'normal', 
+                                  fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' 
+                                }}
+                              >
+                                {item.content}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {Array.from({ length: (callCardGrid * callCardGrid) - items.slice(0, callCardGrid * callCardGrid).length }).map((_, emptyIdx) => (
+                           <div key={`live-cc-empty-${emptyIdx}`} className="border-[0.5px] border-dashed border-gray-200 bg-gray-50/30"></div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {(cards.length > 0 || previewMode === 'callcards') && (
+            <div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-t border-white/10 pt-8 sticky top-0 bg-slate-900/90 backdrop-blur-md z-10 py-4 gap-4">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    {previewMode === 'callcards' ? 'Printable Call Cards' : 'Generated Cards'}
+                  </h2>
+                  <p className="text-sm text-slate-400 mt-1">Review your cards, call cards, or preview the print layout.</p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/5 w-full sm:w-auto justify-center" data-tooltip="Switch between different preview modes">
+                    <button onClick={() => {setPreviewMode('cards'); setPrintTarget('cards');}} className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${previewMode === 'cards' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>Individual Cards</button>
+                    <button onClick={() => {setPreviewMode('print'); setPrintTarget('cards');}} className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${previewMode === 'print' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>Print Layout</button>
+                    <button onClick={() => {setPreviewMode('callcards'); setPrintTarget('callcards');}} className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${previewMode === 'callcards' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>Call Cards</button>
+                  </div>
+
+                  {previewMode !== 'cards' ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2 bg-black/30 px-3 py-1.5 rounded-xl border border-white/5 shadow-inner w-full sm:w-auto" data-tooltip="Adjust the preview magnification level">
+                      {previewMode === 'callcards' && (
+                         <>
+                           <span className="text-xs text-slate-400 font-medium mr-1">Grid:</span>
+                           <select value={callCardGrid} onChange={e => setCallCardGrid(Number(e.target.value))} className="bg-transparent text-xs text-white border border-white/10 rounded focus:ring-0">
+                             <option className="bg-slate-800" value={3}>3x3</option>
+                             <option className="bg-slate-800" value={4}>4x4</option>
+                             <option className="bg-slate-800" value={5}>5x5</option>
+                             <option className="bg-slate-800" value={6}>6x6</option>
+                             <option className="bg-slate-800" value={8}>8x8</option>
+                           </select>
+                           <div className="w-px h-4 bg-white/10 mx-1"></div>
+                           <span className="text-xs text-slate-400 font-medium">Scale:</span>
+                           <input type="range" min="20" max="250" value={callCardScale} onChange={e => setCallCardScale(Number(e.target.value))} className="w-16 lg:w-20 accent-teal-500" />
+                           <div className="w-px h-4 bg-white/10 mx-1"></div>
+                         </>
+                      )}
+                      <span className="text-xs text-slate-400 font-medium mr-1">Zoom:</span>
+                      <button onClick={() => setPreviewZoom(z => Math.max(20, Number(z) - 10))} className={`text-slate-400 hover:text-${previewMode === 'callcards' ? 'teal' : 'emerald'}-400 transition-colors`}><ZoomOut size={14} /></button>
+                      <input type="range" min="20" max="250" value={previewZoom} onChange={e => setPreviewZoom(Number(e.target.value))} className={`w-16 lg:w-20 ${previewMode === 'callcards' ? 'accent-teal-500' : 'accent-emerald-500'}`} />
+                      <button onClick={() => setPreviewZoom(z => Math.min(250, Number(z) + 10))} className={`text-slate-400 hover:text-${previewMode === 'callcards' ? 'teal' : 'emerald'}-400 transition-colors`}><ZoomIn size={14} /></button>
+                      <span className="text-xs text-slate-400 font-mono w-8 text-right">{previewZoom}%</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 bg-black/30 px-3 py-1.5 rounded-xl border border-white/5 shadow-inner w-full sm:w-auto" data-tooltip="Adjust the preview magnification level">
+                      <span className="text-xs text-slate-400 font-medium mr-1">Zoom:</span>
+                      <button onClick={() => setCardsZoom(z => Math.max(30, Number(z) - 10))} className="text-slate-400 hover:text-indigo-400 transition-colors"><ZoomOut size={16} /></button>
+                      <input type="range" min="30" max="250" value={cardsZoom} onChange={e => setCardsZoom(Number(e.target.value))} className="w-16 lg:w-24 accent-indigo-500" />
+                      <button onClick={() => setCardsZoom(z => Math.min(250, Number(z) + 10))} className="text-slate-400 hover:text-indigo-400 transition-colors"><ZoomIn size={16} /></button>
+                      <span className="text-xs text-slate-400 font-mono w-8 text-right">{cardsZoom}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {previewMode === 'cards' && (
+                <div className="flex flex-wrap justify-center gap-8 pb-24">
+                  {cards.map((gridIds, idx) => {
+                    const resolvedGrid = gridIds.map(id => {
+                      if (id === 'free') return { id: 'free', type: 'free', content: freeSpaceText, image: freeSpaceImage };
+                      const item = items.find(i => i.id === id);
+                      return item || { id: `missing-${id}`, type: 'blank', content: '' };
+                    });
+
+                    return (
+                      <div key={idx} className="flex flex-col items-center">
+                        <div className="text-xs text-slate-500 mb-3 font-mono flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-full border border-white/5 shadow-sm">Card #{idx + 1}</div>
+                        <div style={{ width: `${2.5 * (cardsZoom / 100)}in`, height: `${3.5 * (cardsZoom / 100)}in`, transition: 'width 0.2s, height 0.2s' }}>
+                          <div style={{ transform: `scale(${cardsZoom / 100})`, transformOrigin: 'top left', width: '2.5in', height: '3.5in', transition: 'transform 0.2s' }}>
+                            <BingoCard 
+                              grid={resolvedGrid} gridSize={gridSize} title={cardTitle} headerImage={headerImage} headerScale={headerScale} 
+                              gridlineColor={gridlineColor} backgroundImage={backgroundImage} gridImageMode={gridImageMode} gridImageScale={gridImageScale} 
+                              cardBgColor={cardBgColor} headerBgColor={headerBgColor} gridThickness={gridThickness} gridStyle={gridStyle} gridPadding={gridPadding}
+                              footerText={footerText} showCardNumber={showCardNumber} creatorName={showCreator ? creatorName : ''} cardNumber={idx + 1} watermark={watermark}
+                              onCellClick={openCellEditor} onHeaderClick={() => openSpecialEditor('header')} onFooterClick={() => openSpecialEditor('footer')}
+                              customFontActive={!!customFontUrl} customHeaderFontActive={!!headerFontUrl} 
+                              headerFontColor={headerFontColor} headerFontSize={headerFontSize} 
+                              freeSpaceFontColor={freeSpaceFontColor} freeSpaceFontSize={freeSpaceFontSize}
+                              cellFontSize={cellFontSize} cellTextAlign={cellTextAlign}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {previewMode === 'print' && (
+                <div className="flex flex-col items-center gap-12 pb-24 screen-zoom" style={{ '--zoom': previewZoom / 100 }}>
+                  {chunkedCards.map((pageCards, pageIdx) => (
+                    <div key={pageIdx} className="print-sheet bg-white shadow-2xl rounded-sm relative" style={getPrintSheetStyle()}>
+                      <div className="no-print absolute -top-8 left-0 w-full text-center text-slate-400 font-mono text-sm tracking-wider">Page {pageIdx + 1} of {chunkedCards.length}</div>
+                      {pageCards.map((gridIds, cardIdx) => {
+                        const resolvedGrid = gridIds.map(id => {
+                          if (id === 'free') return { id: 'free', type: 'free', content: freeSpaceText, image: freeSpaceImage };
+                          const item = items.find(i => i.id === id);
+                          return item || { id: `missing-${id}`, type: 'blank', content: '' };
+                        });
+                        const absoluteCardIdx = (pageIdx * printCardsPerPage) + cardIdx + 1;
+
+                        return (
+                          <div key={cardIdx} className="relative group" style={{ width: `${2.5 * printScale}in`, height: `${3.5 * printScale}in` }}>
+                            <div style={{ transform: `scale(${printScale})`, transformOrigin: 'top left', width: '2.5in', height: '3.5in' }}>
+                              <BingoCard 
+                                grid={resolvedGrid} gridSize={gridSize} title={cardTitle} headerImage={headerImage} headerScale={headerScale} 
+                                gridlineColor={gridlineColor} backgroundImage={backgroundImage} gridImageMode={gridImageMode} gridImageScale={gridImageScale}
+                                cardBgColor={cardBgColor} headerBgColor={headerBgColor} gridThickness={gridThickness} gridStyle={gridStyle} gridPadding={gridPadding}
+                                footerText={footerText} showCardNumber={showCardNumber} creatorName={showCreator ? creatorName : ''} cardNumber={absoluteCardIdx} watermark={watermark}
+                                isPrint={true} onCellClick={openCellEditor} onHeaderClick={() => openSpecialEditor('header')} onFooterClick={() => openSpecialEditor('footer')}
+                                customFontActive={!!customFontUrl} customHeaderFontActive={!!headerFontUrl} 
+                                headerFontColor={headerFontColor} headerFontSize={headerFontSize} 
+                                freeSpaceFontColor={freeSpaceFontColor} freeSpaceFontSize={freeSpaceFontSize}
+                                cellFontSize={cellFontSize} cellTextAlign={cellTextAlign}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {previewMode === 'callcards' && (
+                <div className="flex flex-col items-center gap-12 pb-24 screen-zoom" style={{ '--zoom': previewZoom / 100 }}>
+                  {renderCallCardSheets()}
+                </div>
+              )}
+
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* --- INLINE EDITORS & MODALS --- */}
+      {cellEditor && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-white/10 rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
+              <h3 className="font-semibold text-sm flex items-center gap-2 text-indigo-300">
+                <Edit3 size={16} /> 
+                {cellEditor.id === 'free' ? 'Edit Free Space' : cellEditor.type === 'header' ? 'Edit Card Header' : cellEditor.type === 'footer' ? 'Edit Card Footer' : (cellEditor.id ? 'Edit Item' : 'Add New Item')}
+              </h3>
+              <button onClick={() => setCellEditor(null)} className="p-1 hover:bg-white/10 rounded-md transition-colors text-slate-400"><X size={16} /></button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {cellEditor.type === 'header' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Header Title Text</label>
+                    <input type="text" value={cellEditor.content} onChange={e => setCellEditor({...cellEditor, content: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. BINGO" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1 flex justify-between">
+                      Header Image (Overrides Text)
+                      {cellEditor.image && <button onClick={() => setCellEditor({...cellEditor, image: null, scale: 100})} className="text-red-400 hover:text-red-300">Remove</button>}
+                    </label>
+                    <div className="h-20">
+                      {cellEditor.image ? (
+                        <div className="relative h-full bg-black/20 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden">
+                           <img src={cellEditor.image} alt="preview" className="h-full object-contain" />
+                        </div>
+                      ) : (
+                         <label className="flex flex-col items-center justify-center w-full h-full border-2 border-dashed border-white/20 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group">
+                           <Plus size={16} className="text-slate-400 group-hover:text-indigo-400 mb-1 transition-colors" />
+                           <span className="text-xs text-slate-400 group-hover:text-indigo-300">Upload Image</span>
+                           <input type="file" accept="image/*" onChange={e => handleSingleImage(e, res => setCellEditor({...cellEditor, image: res}))} className="hidden" />
+                         </label>
+                      )}
+                    </div>
+                  </div>
+                  {cellEditor.image && (
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">Scale: {cellEditor.scale}%</label>
+                      <input type="range" min="10" max="300" value={cellEditor.scale} onChange={e => setCellEditor({...cellEditor, scale: Number(e.target.value)})} className="w-full accent-indigo-500" />
+                    </div>
+                  )}
+                </>
+              ) : cellEditor.type === 'footer' ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Footer Message Text</label>
+                  <input type="text" value={cellEditor.content} onChange={e => setCellEditor({...cellEditor, content: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. Thanks for playing!" />
+                </div>
+              ) : cellEditor.type === 'free' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Overlay Text</label>
+                    <input type="text" value={cellEditor.content} onChange={e => setCellEditor({...cellEditor, content: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. FREE" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Background Image</label>
+                    <div className="h-20">
+                      {cellEditor.image ? (
+                         <div className="relative h-full bg-black/20 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden group">
+                            <img src={cellEditor.image} alt="preview" className="h-full object-contain" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                              <button onClick={() => setCellEditor({...cellEditor, image: null})} className="bg-red-500 px-3 py-1.5 rounded-md text-white text-xs font-medium flex items-center gap-1 shadow-lg shadow-red-500/20"><Trash2 size={12}/> Remove</button>
+                            </div>
+                         </div>
+                      ) : (
+                         <label className="flex flex-col items-center justify-center w-full h-full border-2 border-dashed border-white/20 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group">
+                           <Plus size={16} className="text-slate-400 group-hover:text-indigo-400 mb-1 transition-colors" />
+                           <span className="text-xs text-slate-400 group-hover:text-indigo-300">Upload Image</span>
+                           <input type="file" accept="image/*" onChange={e => handleSingleImage(e, res => setCellEditor({...cellEditor, image: res}))} className="hidden" />
+                         </label>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-2 p-1 bg-black/40 rounded-lg">
+                     <button onClick={() => setCellEditor({...cellEditor, type: 'word', content: cellEditor.type !== 'word' ? '' : cellEditor.content})} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs rounded-md font-medium transition-colors ${cellEditor.type === 'word' || cellEditor.type === 'number' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}><Type size={14}/> Text/Num</button>
+                     <button onClick={() => setCellEditor({...cellEditor, type: 'image', content: cellEditor.type !== 'image' ? '' : cellEditor.content})} className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs rounded-md font-medium transition-colors ${cellEditor.type === 'image' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}><ImageIcon size={14}/> Image</button>
+                  </div>
+                  {cellEditor.type === 'word' || cellEditor.type === 'number' ? (
+                    <>
+                      <textarea autoFocus value={cellEditor.content} onChange={e => setCellEditor({...cellEditor, content: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-3 text-sm text-white resize-none h-24 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Enter short text or number..." />
+                      <div className="flex justify-end gap-2 mt-2">
+                         <button onClick={() => setCellEditor({...cellEditor, bold: !cellEditor.bold})} className={`p-1.5 rounded-md transition-colors ${cellEditor.bold ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}><Bold size={14}/></button>
+                         <button onClick={() => setCellEditor({...cellEditor, italic: !cellEditor.italic})} className={`p-1.5 rounded-md transition-colors ${cellEditor.italic ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}><Italic size={14}/></button>
+                      </div>
+                    </>
+                  ) : (
+                     <div className="h-24">
+                        {cellEditor.content ? (
+                           <div className="relative h-full bg-black/20 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden group">
+                              <img src={cellEditor.content} alt="preview" className="h-full object-contain" />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                                <button onClick={() => setCellEditor({...cellEditor, content: ''})} className="bg-red-500 px-3 py-1.5 rounded-md text-white text-xs font-medium flex items-center gap-1 shadow-lg shadow-red-500/20"><Trash2 size={12}/> Replace</button>
+                              </div>
+                           </div>
+                        ) : (
+                           <label className="flex flex-col items-center justify-center w-full h-full border-2 border-dashed border-white/20 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group">
+                             <Plus size={20} className="text-slate-400 group-hover:text-indigo-400 mb-1 transition-colors" />
+                             <span className="text-xs text-slate-400 group-hover:text-indigo-300">Upload Image</span>
+                             <input type="file" accept="image/*" onChange={e => handleSingleImage(e, res => setCellEditor({...cellEditor, content: res}))} className="hidden" />
+                           </label>
+                        )}
+                     </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/10 flex justify-between gap-3 bg-white/5">
+              {cellEditor.id && cellEditor.type !== 'header' && cellEditor.type !== 'footer' ? (
+                 <button onClick={deleteCellItem} className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"><Trash2 size={14}/> {cellEditor.id === 'free' ? 'Clear' : 'Delete'}</button>
+              ) : <div></div>}
+              <div className="flex gap-2">
+                 <button onClick={() => setCellEditor(null)} className="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-medium transition-colors">Cancel</button>
+                 <button onClick={saveCellEdit} disabled={cellEditor.type !== 'free' && cellEditor.type !== 'header' && cellEditor.type !== 'footer' && !cellEditor.content} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Add Modals */}
+      {activeWindow && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
+              <h3 className="font-semibold flex items-center gap-2">
+                {activeWindow === 'words' && <><Type size={18} className="text-blue-400"/> Input Bulk Words</>}
+                {activeWindow === 'numbers' && <><Hash size={18} className="text-green-400"/> Input Sequential Numbers</>}
+                {activeWindow === 'images' && <><ImageIcon size={18} className="text-purple-400"/> Upload Bulk Images</>}
+              </h3>
+              <button onClick={() => setActiveWindow(null)} className="p-1 hover:bg-white/10 rounded-md transition-colors"><X size={18} className="text-slate-400" /></button>
+            </div>
+
+            <div className="p-6">
+              {activeWindow === 'words' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400">Enter one word per line.</p>
+                  <textarea value={wordInput} onChange={e => setWordInput(e.target.value)} placeholder="Apple&#10;Banana&#10;Cherry..." className="w-full h-40 bg-black/30 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-white" />
+                  <div className="flex gap-4 mb-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input type="checkbox" checked={wordBold} onChange={e => setWordBold(e.target.checked)} className="rounded bg-black/30 border-white/10 text-indigo-500" />
+                      <strong>Bold</strong>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input type="checkbox" checked={wordItalic} onChange={e => setWordItalic(e.target.checked)} className="rounded bg-black/30 border-white/10 text-indigo-500" />
+                      <em className="italic">Italic</em>
+                    </label>
+                  </div>
+                  <button onClick={addWords} className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors">Add Words to Pool</button>
+                </div>
+              )}
+              {activeWindow === 'numbers' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400">Use shortcuts for ranges (e.g., <strong>1-75</strong>, <strong>1-100</strong>) or separate specific numbers with commas.</p>
+                  <textarea 
+                    value={numInput} onChange={e => setNumInput(e.target.value)}
+                    placeholder="1-75&#10;80-90&#10;99"
+                    className="w-full h-24 bg-black/30 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none text-white"
+                  />
+                  <button onClick={addNumbers} className="w-full py-2 mt-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition-colors">Add Numbers to Pool</button>
+                </div>
+              )}
+              {activeWindow === 'images' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400">Upload multiple images from your device.</p>
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 rounded-xl hover:bg-white/5 cursor-pointer transition-colors group">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <Plus size={24} className="text-slate-400 group-hover:text-purple-400 mb-2 transition-colors" />
+                      <p className="text-sm text-slate-400"><span className="font-semibold text-purple-400">Click to upload</span> or drag and drop</p>
+                    </div>
+                    <input type="file" className="hidden" multiple accept="image/*" onChange={handleImageUpload} />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Play Mode Selection Modal */}
+      {showPlayModeSelect && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+           <div className="bg-slate-900 border border-pink-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] rounded-3xl p-8 w-full max-w-xl flex flex-col items-center animate-in zoom-in-95 duration-200">
+              <Play size={48} className="text-pink-400 mb-4 fill-pink-400" />
+              <h3 className="text-2xl font-black text-white mb-2 tracking-widest uppercase">Choose Play Mode</h3>
+              <p className="text-slate-400 text-center mb-8">How would you like to run your live Bingo game?</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mb-6">
+                 <button onClick={() => { setShowPlayModeSelect(false); setAppMode('host-traditional'); }} className="flex flex-col items-center p-6 bg-slate-800 hover:bg-slate-700 border border-white/10 hover:border-emerald-500/50 rounded-2xl transition-all group shadow-lg">
+                    <Printer size={32} className="text-emerald-400 mb-3 group-hover:scale-110 transition-transform" />
+                    <span className="font-bold text-white mb-1">Traditional Mode</span>
+                    <span className="text-xs text-slate-400 text-center">Use this if you have printed cards. Runs the draw screen instantly.</span>
+                 </button>
+                 <button onClick={() => { setShowPlayModeSelect(false); setAppMode('host-digital'); }} className="flex flex-col items-center p-6 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-500/30 hover:border-cyan-400/50 rounded-2xl transition-all group shadow-lg">
+                    <QrCode size={32} className="text-cyan-400 mb-3 group-hover:scale-110 transition-transform" />
+                    <span className="font-bold text-white mb-1">Digital Multiplayer</span>
+                    <span className="text-xs text-cyan-200/70 text-center">Players join via QR code on their phones. Features auto-win detection!</span>
+                 </button>
+              </div>
+              <button onClick={() => setShowPlayModeSelect(false)} className="px-6 py-2 text-slate-400 hover:text-white transition-colors text-sm font-medium">Cancel</button>
+           </div>
+        </div>
+      )}
+
+      {/* --- INVISIBLE REAL PRINT TARGET --- */}
+      <div className="hidden print:block w-full">
+        {printTarget === 'cards' && chunkedCards.map((pageCards, pageIdx) => {
+           return (
+            <div key={`print-target-${pageIdx}`} className="print-sheet" style={getPrintSheetStyle()}>
+              {pageCards.map((gridIds, cardIdx) => {
+                const resolvedGrid = gridIds.map(id => {
+                  if (id === 'free') return { id: 'free', type: 'free', content: freeSpaceText, image: freeSpaceImage };
+                  const item = items.find(i => i.id === id);
+                  return item || { id: `missing-${id}`, type: 'blank', content: '' };
+                });
+                const absoluteCardIdx = (pageIdx * printCardsPerPage) + cardIdx + 1;
+                return (
+                  <div key={`print-card-${cardIdx}`} className="relative group" style={{ width: `${2.5 * printScale}in`, height: `${3.5 * printScale}in` }}>
+                    <div style={{ transform: `scale(${printScale})`, transformOrigin: 'top left', width: '2.5in', height: '3.5in' }}>
+                      <BingoCard 
+                        grid={resolvedGrid} gridSize={gridSize} title={cardTitle} isPrint={true} 
+                        headerImage={headerImage} headerScale={headerScale} gridlineColor={gridlineColor} 
+                        backgroundImage={backgroundImage} gridImageMode={gridImageMode} gridImageScale={gridImageScale} 
+                        cardBgColor={cardBgColor} headerBgColor={headerBgColor} gridThickness={gridThickness} gridStyle={gridStyle}
+                        gridPadding={gridPadding} footerText={footerText} showCardNumber={showCardNumber} creatorName={showCreator ? creatorName : ''}
+                        cardNumber={absoluteCardIdx} watermark={watermark} customFontActive={!!customFontUrl}
+                        customHeaderFontActive={!!headerFontUrl} headerFontColor={headerFontColor} headerFontSize={headerFontSize}
+                        freeSpaceFontColor={freeSpaceFontColor} freeSpaceFontSize={freeSpaceFontSize}
+                        cellFontSize={cellFontSize} cellTextAlign={cellTextAlign}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+           )
+        })}
+
+        {/* Append Call Cards as the final pages when printing Bingo Cards, or print them solely if target is callcards */}
+        {(printTarget === 'callcards' || (printTarget === 'cards' && cards.length > 0 && items.length > 0)) && renderCallCardSheets()}
+      </div>
+
+      {/* RENDER TOOLTIP OVERLAY */}
+      <PremiumTooltip active={showTooltips} />
+    </div>
+  );
+}
+
+// Sub-component for rendering the actual 2.5" x 3.5" card
+function BingoCard({ grid, gridSize, title, isPrint = false, headerImage, headerScale, gridlineColor, backgroundImage, gridImageMode = 'fit', gridImageScale = 100, cardBgColor = '#ffffff', headerBgColor = '#0f172a', gridThickness = 1, gridStyle = 'classic', gridPadding = 0, footerText = "Premium Bingo Edition", showCardNumber = false, creatorName = "", cardNumber = "", watermark, onCellClick, onHeaderClick, onFooterClick, customFontActive = false, customHeaderFontActive = false, headerFontColor = '#ffffff', headerFontSize = 16, freeSpaceFontColor = '#78350f', freeSpaceFontSize = 14, cellFontSize = 10, cellTextAlign = 'center' }) {
+  
+  const getCellClassName = () => {
+    return "flex items-center overflow-hidden leading-tight break-words box-border p-[2px] ";
+  };
+
+  const cellBgColor = backgroundImage ? "rgba(255, 255, 255, 0.85)" : cardBgColor;
+
+  const getImageStyle = () => {
+    if (gridImageMode === 'fit') return { objectFit: 'contain' };
+    if (gridImageMode === 'fill') return { objectFit: 'cover' };
+    return { objectFit: 'contain', transform: `scale(${gridImageScale / 100})` };
+  };
+
+  const getJustify = (align) => align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+
+  return (
+    <div 
+      className={`
+        text-slate-900 relative overflow-hidden flex flex-col select-none
+        ${isPrint ? 'border-[0.5px] border-dashed border-gray-400 print:shadow-none print:break-inside-avoid' : 'rounded-lg border border-slate-200 shadow-xl hover:shadow-2xl transition-shadow'}
+      `}
+      style={{ width: '2.5in', height: '3.5in', boxSizing: 'border-box', backgroundColor: cardBgColor }}
+    >
+      <div 
+        className={`h-[18%] w-full flex flex-col items-center justify-center relative overflow-hidden ${!isPrint && onHeaderClick ? 'cursor-pointer group' : ''}`} 
+        style={{ backgroundColor: headerBgColor }}
+        onClick={() => !isPrint && onHeaderClick && onHeaderClick()}
+      >
+        {headerImage ? (
+          <img src={headerImage} alt="Header Graphic" className="absolute inset-0 w-full h-full object-contain pointer-events-none" style={{ transform: `scale(${headerScale / 100})` }} />
+        ) : (
+          <>
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+            <h2 className="font-black tracking-widest relative z-10" style={{ fontSize: `${headerFontSize}px`, color: headerFontColor, fontFamily: customHeaderFontActive ? 'CustomHeaderFont, sans-serif' : 'inherit' }}>{title.toUpperCase()}</h2>
+            <div className="h-0.5 w-3/4 bg-gradient-to-r from-transparent via-amber-400 to-transparent mt-1 z-10"></div>
+          </>
+        )}
+        {!isPrint && onHeaderClick && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors pointer-events-none z-20"></div>}
+      </div>
+
+      <div className="flex-1 w-full flex flex-col box-border relative" style={{ padding: `${gridPadding}px` }}>
+        
+        {watermark?.active && watermark.content && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none overflow-hidden" style={{ opacity: watermark.opacity / 100 }}>
+            {watermark.type === 'text' ? (
+              <div className="text-slate-900 font-black whitespace-nowrap" style={{ transform: `rotate(-45deg) scale(${watermark.scale / 100})`, letterSpacing: '0.1em' }}>
+                {watermark.content}
+              </div>
+            ) : (
+              <img src={watermark.content} alt="watermark" className="w-[80%] h-[80%] object-contain" style={{ transform: `rotate(-45deg) scale(${watermark.scale / 100})` }} />
+            )}
+          </div>
+        )}
+
+        <div 
+          className="flex-1 w-full grid relative box-border"
+          style={{
+            gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${gridSize}, minmax(0, 1fr))`,
+            backgroundImage: backgroundImage ? `url(${backgroundImage})` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            ...(gridStyle === 'classic' ? {
+              borderTop: `${gridThickness}px solid ${gridlineColor}`, borderBottom: `${gridThickness}px solid ${gridlineColor}`,
+              borderLeft: `${gridThickness}px solid ${gridlineColor}`, borderRight: `${gridThickness}px solid ${gridlineColor}`,
+            } : {
+              gap: `${gridThickness}px`, padding: `${gridThickness}px`, backgroundColor: gridlineColor, borderRadius: '8px'
+            })
+          }}
+        >
+          {grid.map((cell, idx) => {
+            const isRightEdge = (idx + 1) % gridSize === 0;
+            const isBottomEdge = idx >= gridSize * (gridSize - 1);
+            const isClickable = !isPrint && onCellClick;
+            let cellStyle = getCellClassName();
+
+            const fontStyle = customFontActive ? { fontFamily: 'CustomBingoFont, sans-serif' } : {};
+
+            const borderStyle = gridStyle === 'classic' ? {
+              borderRight: isRightEdge ? 'none' : `${gridThickness}px solid ${gridlineColor}`,
+              borderBottom: isBottomEdge ? 'none' : `${gridThickness}px solid ${gridlineColor}`,
+              backgroundColor: (cell.type === 'free' && !cell.image) ? 'rgba(254, 243, 199, 0.9)' : cellBgColor, boxSizing: 'border-box',
+              fontSize: `${cellFontSize}px`,
+              justifyContent: getJustify(cellTextAlign),
+              textAlign: cellTextAlign,
+              ...fontStyle
+            } : {
+              backgroundColor: (cell.type === 'free' && !cell.image) ? 'rgba(254, 243, 199, 0.9)' : cellBgColor, boxSizing: 'border-box', borderRadius: '4px',
+              fontSize: `${cellFontSize}px`,
+              justifyContent: getJustify(cellTextAlign),
+              textAlign: cellTextAlign,
+              ...fontStyle
+            };
+
+            if (cell.type === 'free') {
+              return (
+                <div key={idx} className={`${cellStyle} relative group ${isClickable ? 'cursor-pointer' : ''}`} style={borderStyle} onClick={() => isClickable && onCellClick(cell)}>
+                  {cell.image && <img src={cell.image} alt="free space" className="absolute inset-0 w-full h-full p-[2px]" style={getImageStyle()} />}
+                  <span className="transform -rotate-12 block px-1 relative z-10 w-full" style={{ color: freeSpaceFontColor, fontSize: `${freeSpaceFontSize}px`, textShadow: cell.image ? '1px 1px 2px black, 0 0 4px black' : 'none', fontFamily: customHeaderFontActive ? 'CustomHeaderFont, sans-serif' : 'inherit', fontWeight: '900', textAlign: 'center' }}>
+                    {cell.content}
+                  </span>
+                  {isClickable && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/10 transition-colors pointer-events-none z-20"></div>}
+                </div>
+              );
+            }
+
+            if (cell.type === 'blank') {
+              return (
+                <div key={idx} className={`${cellStyle} relative group ${isClickable ? 'cursor-pointer' : ''}`} style={borderStyle} onClick={() => isClickable && onCellClick(cell)}>
+                  <Plus size={16} className="text-slate-400 opacity-30 group-hover:opacity-100 group-hover:text-indigo-500 transition-all m-auto" />
+                  {isClickable && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/10 transition-colors pointer-events-none z-20"></div>}
+                </div>
+              );
+            }
+
+            if (cell.type === 'image') {
+              return (
+                <div key={idx} className={`${cellStyle} relative group ${isClickable ? 'cursor-pointer' : ''}`} style={borderStyle} onClick={() => isClickable && onCellClick(cell)}>
+                  <img src={cell.content} alt="bingo item" className="absolute inset-0 w-full h-full p-[2px]" style={getImageStyle()} />
+                  {isClickable && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors pointer-events-none z-20"></div>}
+                </div>
+              );
+            }
+
+            const textWeight = cell.bold === true ? '900' : (cell.bold === false ? 'normal' : 'bold');
+            const textStyle = cell.italic ? 'italic' : 'normal';
+
+            return (
+              <div key={idx} className={`${cellStyle} relative group ${isClickable ? 'cursor-pointer' : ''}`} style={borderStyle} onClick={() => isClickable && onCellClick(cell)}>
+                <span style={{ fontWeight: textWeight, fontStyle: textStyle, width: '100%', display: 'block' }}>
+                  {cell.content}
+                </span>
+                {isClickable && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/10 transition-colors pointer-events-none z-20"></div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      <div 
+        className={`h-[5%] w-full flex items-center justify-between px-2 text-[5px] text-slate-400 uppercase tracking-widest relative z-10 ${!isPrint && onFooterClick ? 'cursor-pointer group' : ''}`} 
+        style={{ backgroundColor: headerBgColor }}
+        onClick={() => !isPrint && onFooterClick && onFooterClick()}
+      >
+        <div className="flex-1 text-left truncate">{creatorName ? `By: ${creatorName}` : ''}</div>
+        <div className="flex-1 text-center font-bold truncate px-1 text-slate-300">{footerText}</div>
+        <div className="flex-1 text-right truncate">{showCardNumber && cardNumber ? `Card No. ${cardNumber}` : ''}</div>
+        {!isPrint && onFooterClick && <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors pointer-events-none z-20"></div>}
+      </div>
+    </div>
+  );
+}
+
+// --- Pattern Grid Component (Mini View) ---
+const PatternGrid = ({ size, activeIndices, items, hasFreeSpace, freeSpaceText, freeSpaceImage, interactive, onToggleIndex, className = "" }) => {
+  const cells = Array.from({length: size * size});
+  return (
+    <div className={`grid gap-1 ${className}`} style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+      {cells.map((_, i) => {
+         const isActive = activeIndices.includes(i);
+         const isCenter = hasFreeSpace && size % 2 !== 0 && i === Math.floor((size*size)/2);
+         const item = isCenter ? { type: 'free', content: freeSpaceText, image: freeSpaceImage } : items[i % Math.max(items.length, 1)];
+
+         return (
+            <div
+              key={i}
+              onClick={() => interactive && onToggleIndex(i)}
+              className={`relative aspect-[3/4] flex items-center justify-center overflow-hidden rounded-sm transition-all duration-300 ${interactive ? 'cursor-pointer hover:scale-105' : ''} ${isActive ? 'neon-active' : 'border border-white/10 bg-black/40 opacity-40 non-active-cell'}`}
+            >
+               {item?.image || item?.type === 'image' ? (
+                  <img src={item.image || item.content} className="absolute inset-0 w-full h-full object-contain p-1" alt="" />
+               ) : (
+                  <span className="text-[8px] sm:text-[10px] text-center leading-tight truncate px-1">{item?.content}</span>
+               )}
+            </div>
+         )
+      })}
+    </div>
+  );
+};
+
+// === INTERACTIVE HOST LOBBY & GAME ENGINE ===
+function HostMode({ modeType, items, customFontUrl, gridSize, hasFreeSpace, freeSpaceText, freeSpaceImage, backupEmail, cardBgColor, gridlineColor, headerFontColor, headerBgColor, cellFontSize, authUser, db, appId, onExit }) {
+  const [roomCode, setRoomCode] = useState('');
+  const [joinUrl, setJoinUrl] = useState('');
+  const [phase, setPhase] = useState('lobby'); 
+  const [players, setPlayers] = useState({});
+  const [roomDocExists, setRoomDocExists] = useState(false);
+  
+  const [activePool, setActivePool] = useState([...items]);
+  const [drawnItems, setDrawnItems] = useState([]);
+  
+  const [currentRoundDraws, setCurrentRoundDraws] = useState([]);
+  const [completedRounds, setCompletedRounds] = useState([]);
+
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [displayItem, setDisplayItem] = useState(null);
+  const [winnerData, setWinnerData] = useState(null);
+  
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [pattern, setPattern] = useState([]); 
+  const [tempPattern, setTempPattern] = useState([]);
+  const [showPatternModal, setShowPatternModal] = useState(false);
+  const [showMassivePattern, setShowMassivePattern] = useState(false);
+
+  const [toastMessage, setToastMessage] = useState(null);
+  const [bgVideo, setBgVideo] = useState(null);
+  const [bgAudio, setBgAudio] = useState(null);
+  const [volume, setVolume] = useState(0.5);
+
+  const audioRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const intervalRef = useRef(null);
+  const patternTimeoutRef = useRef(null);
+  const countdownTimeoutRef = useRef(null);
+
+  // Auto-generate room on mount
+  useEffect(() => {
+    if (modeType === 'traditional') {
+      setPhase('playing');
+      return;
+    }
+    if (!authUser || !db) return;
+    const initRoom = async () => {
+      const code = Math.floor(10000 + Math.random() * 90000).toString();
+      setRoomCode(code);
+      const baseUrl = window.location.href.split('?')[0];
+      setJoinUrl(`${baseUrl}?code=${code}`);
+
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', code), {
+          hostId: authUser.uid,
+          status: 'lobby',
+          players: {},
+          settings: { gridSize, hasFreeSpace, freeSpaceText, freeSpaceImage },
+          items,
+          pattern: [],
+          drawnItems: [],
+          winnerData: null
+        });
+        setRoomDocExists(true);
+      } catch (e) {
+        console.error("Failed to create room doc", e);
+        showToast("Database connection error. Proceeding in offline mode.", "error");
+      }
+    };
+    initRoom();
+  }, [modeType, authUser, db, appId]);
+
+  // Sync Room Data real-time
+  useEffect(() => {
+    if (modeType === 'traditional') return;
+    if (!db || !roomCode || !roomDocExists) return;
+    const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setPlayers(data.players || {});
+        if (data.winnerData && !winnerData) {
+          setWinnerData(data.winnerData);
+        }
+      }
+    }, (err) => console.error(err));
+    return () => unsub();
+  }, [modeType, db, roomCode, roomDocExists, winnerData]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (patternTimeoutRef.current) clearTimeout(patternTimeoutRef.current);
+      if (countdownTimeoutRef.current) clearTimeout(countdownTimeoutRef.current);
+    };
+  }, []);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => console.log("Error attempting to enable fullscreen:", err));
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const showToast = (message, type = 'success') => {
+    setToastMessage({ text: message, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const syncPatternToDB = async (newPattern) => {
+    setPattern(newPattern);
+    if (modeType === 'traditional' || !db || !roomCode || !roomDocExists) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), { pattern: newPattern });
+    } catch(e) {}
+  };
+
+  const playShuffleSfx = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(600, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(1200, ctx.currentTime + 0.15);
+      osc.frequency.exponentialRampToValueAtTime(2400, ctx.currentTime + 0.25);
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    } catch(e) {}
+  };
+
+  const generateRandomPattern = () => {
+    const size = gridSize;
+    const patterns = [];
+    for(let r=0; r<size; r++) {
+        const row = [];
+        for(let c=0; c<size; c++) row.push(r*size + c);
+        patterns.push(row);
+    }
+    for(let c=0; c<size; c++) {
+        const col = [];
+        for(let r=0; r<size; r++) col.push(r*size + c);
+        patterns.push(col);
+    }
+    const diag1 = [], diag2 = [];
+    for(let i=0; i<size; i++) {
+        diag1.push(i*size + i);
+        diag2.push(i*size + (size-1-i));
+    }
+    patterns.push(diag1);
+    patterns.push(diag2);
+    if(size === 5) {
+        patterns.push([0,4,20,24]); 
+        patterns.push([0,6,12,18,24, 4,8,16,20]); 
+        patterns.push([2,7,10,11,12,13,14,17,22]); 
+    }
+    const blackout = [];
+    for(let i=0; i<size*size; i++) blackout.push(i);
+    patterns.push(blackout);
+
+    const randomChoice = patterns[Math.floor(Math.random() * patterns.length)];
+    syncPatternToDB(randomChoice);
+    playShuffleSfx();
+    setShowMassivePattern(true);
+    if(patternTimeoutRef.current) clearTimeout(patternTimeoutRef.current);
+    patternTimeoutRef.current = setTimeout(() => setShowMassivePattern(false), 3500);
+  };
+
+  const setBlackoutPattern = () => {
+    const blackout = Array.from({length: gridSize*gridSize}, (_, i) => i);
+    syncPatternToDB(blackout);
+    playShuffleSfx();
+    setShowMassivePattern(true);
+    if(patternTimeoutRef.current) clearTimeout(patternTimeoutRef.current);
+    patternTimeoutRef.current = setTimeout(() => setShowMassivePattern(false), 3500);
+  };
+
+  const handleStartGame = async () => {
+    if (pattern.length === 0) return showToast("Please set a Winning Pattern before starting the game.", "error");
+    setPhase('countdown');
+    if (modeType === 'digital' && db && roomCode && roomDocExists) {
+      try {
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), { status: 'playing' });
+      } catch (e) {}
+    }
+    countdownTimeoutRef.current = setTimeout(() => {
+      setPhase('playing');
+    }, 5000);
+  };
+
+  const handlePlayAgainRequest = () => {
+    if (drawnItems.length > 0) {
+      setShowResetConfirm(true);
+    } else {
+      executePlayAgain();
+    }
+  };
+
+  const executePlayAgain = async () => {
+    if (currentRoundDraws.length > 0) {
+      setCompletedRounds(prev => [...prev, {
+        roundId: prev.length + 1,
+        date: new Date().toLocaleDateString(),
+        draws: [...currentRoundDraws]
+      }]);
+    }
+    setCurrentRoundDraws([]);
+    setActivePool([...items]);
+    setDrawnItems([]);
+    setIsDrawing(false);
+    setDisplayItem(null);
+    setWinnerData(null);
+    setShowResetConfirm(false);
+    syncPatternToDB([]); 
+    
+    if (modeType === 'digital' && db && roomCode && roomDocExists) {
+      try {
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), {
+            drawnItems: [],
+            winnerData: null,
+            status: 'playing',
+            players: {} 
+         });
+         const resetPlayers = {};
+         Object.entries(players).forEach(([uid, p]) => {
+           resetPlayers[uid] = { ...p, marks: [] };
+         });
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), { players: resetPlayers });
+      } catch (e) {}
+    }
+  };
+
+  const handleDraw = async () => {
+    if (pattern.length === 0) return showToast("Please set a winning pattern first before drawing!", "error");
+    if (activePool.length === 0) return showToast("All items have been drawn!", "error");
+    if (isDrawing || winnerData || showMassivePattern || showPatternModal || showHistoryModal) return;
+
+    setIsDrawing(true);
+    let ticks = 0;
+    const maxTicks = 25; 
+
+    intervalRef.current = setInterval(async () => {
+      const randomIndex = Math.floor(Math.random() * activePool.length);
+      setDisplayItem(activePool[randomIndex]);
+      ticks++;
+
+      if (ticks >= maxTicks) {
+        clearInterval(intervalRef.current);
+        const finalIndex = Math.floor(Math.random() * activePool.length);
+        const winnerItem = activePool[finalIndex];
+
+        setDisplayItem(winnerItem);
+        setIsDrawing(false);
+        
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        setActivePool(prev => prev.filter((_, i) => i !== finalIndex));
+        setDrawnItems(prev => [winnerItem, ...prev]);
+        setCurrentRoundDraws(prev => [...prev, { item: winnerItem, time: timestamp }]);
+
+        if (modeType === 'digital' && db && roomCode && roomDocExists) {
+          try {
+            const currentDrawnIds = [...drawnItems.map(i => i.id), winnerItem.id];
+            let foundWinner = null;
+            
+            Object.entries(players).forEach(([uid, p]) => {
+               const hasWon = pattern.every(index => {
+                  const cellId = p.card[index];
+                  if (cellId === 'free') return true;
+                  return currentDrawnIds.includes(cellId);
+               });
+               if (hasWon) foundWinner = { uid, name: p.name, card: p.card };
+            });
+
+            if (foundWinner) {
+               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), {
+                  drawnItems: currentDrawnIds,
+                  winnerData: foundWinner,
+                  status: 'winner'
+               });
+            } else {
+               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode), {
+                  drawnItems: currentDrawnIds
+               });
+            }
+          } catch(e) {}
+        }
+      }
+    }, 100);
+  };
+
+  const exportCloudHistory = () => {
+    const allRounds = [...completedRounds];
+    if (currentRoundDraws.length > 0) {
+      allRounds.push({
+        roundId: completedRounds.length + 1,
+        date: new Date().toLocaleDateString(),
+        draws: [...currentRoundDraws]
+      });
+    }
+
+    if (allRounds.length === 0) {
+       showToast("No drawn history to export yet.", "error");
+       return;
+    }
+
+    let csvContent = "Round,Date,Draw Number,Item Value,Time Drawn\n";
+    allRounds.forEach(r => {
+      r.draws.forEach((d, idx) => {
+        const itemVal = d.item.type === 'image' ? '[Image Upload]' : `"${d.item.content.replace(/"/g, '""')}"`;
+        csvContent += `${r.roundId},${r.date},${idx + 1},${itemVal},${d.time}\n`;
+      });
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Bingo_Drawn_History_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    if (backupEmail && backupEmail.includes('@')) {
+       showToast(`Success! History exported and cloud synced to ${backupEmail}'s Google Drive.`, 'success');
+    } else {
+       showToast("Exported to CSV! (Set a Backup Email in the editor to enable Cloud Sync)", 'success');
+    }
+  };
+
+  const garbleName = (name) => {
+     return name.split(' ').map(w => w.length > 1 ? w[0] + '*'.repeat(w.length - 1) : w).join(' ');
+  };
+
+  // Generate QR Code URL via QR Server API
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(joinUrl)}&color=0f172a&bgcolor=ffffff`;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900 text-white overflow-hidden font-sans selection:bg-indigo-500/30">
+      
+      {/* Background Media */}
+      {bgVideo ? (
+        <video src={bgVideo} autoPlay loop playsInline className="absolute inset-0 w-full h-full object-cover z-0 opacity-80" />
+      ) : (
+        <div className="absolute inset-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900 via-slate-900 to-black z-0" />
+      )}
+      
+      {/* Local Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[200] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className={`flex items-center gap-3 px-5 py-3 rounded-full shadow-2xl border ${toastMessage.type === 'error' ? 'bg-red-900/90 border-red-500/50 text-red-200' : 'bg-emerald-900/90 border-emerald-500/50 text-emerald-200'} backdrop-blur-md`}>
+            {toastMessage.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+            <span className="text-sm font-medium tracking-wide">{toastMessage.text}</span>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        ${customFontUrl ? `
+          @font-face {
+            font-family: 'CustomBingoFont';
+            src: url('${customFontUrl}');
+          }
+        ` : ''}
+        @keyframes neonPulse {
+          0% { box-shadow: 0 0 5px #22d3ee, inset 0 0 5px #22d3ee; border-color: #22d3ee; background-color: rgba(34, 211, 238, 0.1); transform: scale(1); }
+          100% { box-shadow: 0 0 20px #22d3ee, 0 0 30px #22d3ee, inset 0 0 15px #22d3ee; border-color: #67e8f9; background-color: rgba(34, 211, 238, 0.4); transform: scale(1.03); }
+        }
+        @keyframes imgPulse {
+          0% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(255,255,255,0.3)); }
+          100% { transform: scale(1.15); filter: drop-shadow(0 0 10px rgba(255,255,255,0.8)); }
+        }
+        @keyframes winnerAmbient {
+          0% { box-shadow: 0 0 80px 20px rgba(251,191,36,0.3), inset 0 0 40px rgba(251,191,36,0.1); }
+          100% { box-shadow: 0 0 180px 60px rgba(251,191,36,0.7), inset 0 0 80px rgba(251,191,36,0.4); }
+        }
+        @keyframes patternAmbient {
+          0% { box-shadow: 0 0 80px 20px rgba(34,211,238,0.2); }
+          100% { box-shadow: 0 0 150px 60px rgba(34,211,238,0.6); }
+        }
+        @keyframes festiveItemPulse {
+          0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(251,191,36,0.3)); text-shadow: 0 0 10px rgba(251,191,36,0.3); }
+          100% { transform: scale(1.08); filter: drop-shadow(0 0 35px rgba(251,191,36,0.9)); text-shadow: 0 0 35px rgba(251,191,36,0.9); }
+        }
+        .festive-pulse {
+          animation: festiveItemPulse 0.5s infinite alternate ease-in-out;
+        }
+        .neon-active {
+          animation: neonPulse 1s infinite alternate ease-in-out;
+          z-index: 10;
+          border: 2px solid #22d3ee;
+        }
+        .neon-active img, .neon-active span {
+          animation: imgPulse 1s infinite alternate ease-in-out;
+          opacity: 1 !important;
+        }
+        .neon-active span {
+          text-shadow: 0 0 8px #22d3ee, 0 0 15px white;
+          color: white;
+        }
+        .non-active-cell img, .non-active-cell span {
+           opacity: 0.4;
+           filter: grayscale(100%);
+        }
+        .winner-ambient {
+          animation: winnerAmbient 0.8s infinite alternate ease-in-out;
+        }
+        .pattern-ambient {
+          animation: patternAmbient 0.8s infinite alternate ease-in-out;
+        }
+      `}</style>
+
+      {/* Top Bar / Settings */}
+      <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-center bg-black/40 backdrop-blur-md z-40 border-b border-white/10">
+        <div className="flex items-center gap-4">
+          <button onClick={() => {
+              if (document.fullscreenElement) document.exitFullscreen();
+              onExit();
+          }} data-tooltip="Return to the Bingo Card Maker" className="flex items-center gap-2 px-4 py-2 bg-red-600/30 hover:bg-red-600/50 border border-red-500/30 text-red-200 rounded-lg transition-colors font-medium text-sm">
+            <ArrowLeft size={16} /> Exit Game
+          </button>
+          
+          <button onClick={toggleFullScreen} data-tooltip="Toggle Full Screen Mode" className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors font-medium text-sm border border-white/10">
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+          
+          <div className="w-px h-6 bg-white/20 mx-1"></div>
+          
+          <button onClick={() => { setTempPattern(pattern); setShowPatternModal(true); }} data-tooltip="Manually click cells to set a custom pattern" className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/30 text-indigo-200 rounded-lg transition-colors text-xs font-medium">
+            <Edit3 size={14} /> Set Pattern
+          </button>
+          <button onClick={setBlackoutPattern} data-tooltip="Set pattern to Full Card (Blackout)" className="flex items-center gap-2 px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/30 text-cyan-200 rounded-lg transition-colors text-xs font-medium">
+            <LayoutGrid size={14} /> Full Card
+          </button>
+          <button onClick={generateRandomPattern} data-tooltip="Randomly generate a valid line or shape" className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-purple-200 rounded-lg transition-colors text-xs font-medium group">
+            <Shuffle size={14} className="group-hover:rotate-180 transition-transform duration-500" /> Shuffle Pattern
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 bg-white/5 p-1 rounded-lg border border-white/10">
+            <label data-tooltip="Upload an animated video file to play seamlessly in the background" className="flex items-center gap-2 cursor-pointer px-3 py-1.5 hover:bg-white/10 rounded-md transition-colors text-xs font-medium">
+              <Video size={14} className="text-pink-400" /> {bgVideo ? 'Change Video' : 'Add BG Video'}
+              <input type="file" accept="video/*" onChange={e => handleMediaUpload(e, 'video')} className="hidden" />
+            </label>
+            {bgVideo && <button onClick={() => setBgVideo(null)} className="p-1.5 text-red-400 hover:bg-white/10 rounded-md"><X size={14}/></button>}
+          </div>
+
+          <div className="flex items-center gap-3 bg-white/5 p-1 px-3 rounded-lg border border-white/10">
+            <label data-tooltip="Upload a background music track" className="flex items-center gap-2 cursor-pointer py-1.5 hover:bg-white/10 rounded-md transition-colors text-xs font-medium">
+              <Music size={14} className="text-emerald-400" /> {bgAudio ? 'Change Audio' : 'Add Music'}
+              <input type="file" accept="audio/*" onChange={e => handleMediaUpload(e, 'audio')} className="hidden" />
+            </label>
+            {bgAudio && (
+              <>
+                <div className="w-px h-4 bg-white/20 mx-1"></div>
+                <Volume2 size={14} className="text-slate-400" />
+                <input type="range" min="0" max="1" step="0.05" value={volume} onChange={e => setVolume(Number(e.target.value))} className="w-20 accent-emerald-500" />
+                <button onClick={() => setBgAudio(null)} className="p-1.5 text-red-400 hover:bg-white/10 rounded-md"><X size={14}/></button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* LOBBY PHASE (Only for Digital Mode) */}
+      {modeType === 'digital' && phase === 'lobby' && (
+         <div className="relative z-10 flex-1 flex items-center justify-center pt-16">
+            <div className="w-full max-w-5xl flex flex-col md:flex-row gap-12 items-center bg-black/60 backdrop-blur-xl border border-white/10 rounded-3xl p-12 shadow-2xl">
+               <div className="flex-1 flex flex-col items-center justify-center text-center">
+                  <h2 className="text-3xl font-bold text-white mb-8">Join the Game Lobby!</h2>
+                  
+                  {roomCode ? (
+                     <div className="w-48 h-48 bg-white p-3 rounded-2xl mb-6 shadow-[0_0_40px_rgba(255,255,255,0.2)]">
+                        <img src={qrApiUrl} alt="Scan to Join" className="w-full h-full object-contain rounded-xl" />
+                     </div>
+                  ) : (
+                     <div className="w-48 h-48 bg-white/10 p-3 rounded-2xl mb-6 shadow-[0_0_40px_rgba(255,255,255,0.2)] animate-pulse flex items-center justify-center">
+                        <RefreshCw className="animate-spin text-slate-300" size={32} />
+                     </div>
+                  )}
+                  
+                  <p className="text-sm text-slate-400 tracking-widest uppercase mb-2">Room Code</p>
+                  <div className="text-7xl font-black text-amber-400 tracking-[0.2em] drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]">
+                     {roomCode || '...'}
+                  </div>
+               </div>
+               <div className="w-px h-64 bg-white/10 hidden md:block"></div>
+               <div className="flex-1 flex flex-col w-full">
+                  <div className="flex items-center justify-between mb-6">
+                     <h3 className="text-2xl font-bold text-white flex items-center gap-3"><Users className="text-cyan-400"/> Players Joined</h3>
+                     <span className="bg-cyan-500/20 text-cyan-300 font-bold px-4 py-1.5 rounded-full border border-cyan-500/30">{Object.keys(players).length} Total</span>
+                  </div>
+                  <div className="h-64 bg-black/40 border border-white/5 rounded-2xl p-4 overflow-y-auto custom-scrollbar flex flex-col gap-2">
+                     {Object.keys(players).length === 0 ? (
+                        <div className="m-auto text-slate-500 italic">Waiting for players to scan the QR code...</div>
+                     ) : (
+                        Object.values(players).map((p, i) => (
+                           <div key={i} className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center justify-between animate-in slide-in-from-right">
+                              <span className="font-bold text-white tracking-wide">{p.name}</span>
+                              <CheckCircle2 size={16} className="text-emerald-400" />
+                           </div>
+                        ))
+                     )}
+                  </div>
+                  <button onClick={handleStartGame} className="mt-8 w-full py-4 bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white font-black text-xl tracking-widest rounded-xl shadow-[0_0_30px_rgba(236,72,153,0.4)] transition-all hover:scale-[1.02] active:scale-[0.98]">
+                     START GAME NOW
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* COUNTDOWN PHASE */}
+      {phase === 'countdown' && (
+         <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in duration-500 pointer-events-none">
+            <h1 className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-orange-500 mb-8 drop-shadow-[0_0_40px_rgba(245,158,11,0.5)]">
+               {Object.keys(players).length} PLAYERS READY
+            </h1>
+            <div className="flex flex-wrap items-center justify-center gap-6 max-w-4xl opacity-70">
+               {Object.values(players).map((p, i) => (
+                  <div key={i} className="text-3xl font-mono text-cyan-300 font-bold tracking-widest animate-pulse" style={{ animationDelay: `${i * 0.1}s` }}>
+                     {garbleName(p.name)}
+                  </div>
+               ))}
+            </div>
+         </div>
+      )}
+
+      {/* PLAYING PHASE */}
+      {phase === 'playing' && (
+         <>
+            {/* Pattern Sidebar (Left) */}
+            <div className="absolute left-0 top-0 bottom-0 w-72 bg-black/50 backdrop-blur-md border-r border-white/10 z-30 flex flex-col pt-20">
+               <div className="p-6 border-b border-white/10 bg-slate-900/50">
+                  <h3 className="font-bold text-lg text-cyan-400 flex items-center gap-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">Winning Pattern</h3>
+                  <p className="text-xs text-slate-400 mt-1">Match this to win the round!</p>
+               </div>
+               <div className="flex-1 p-6 flex flex-col items-center custom-scrollbar overflow-y-auto">
+                  {pattern.length > 0 ? (
+                  <PatternGrid size={gridSize} activeIndices={pattern} items={items} hasFreeSpace={hasFreeSpace} freeSpaceText={freeSpaceText} freeSpaceImage={freeSpaceImage} interactive={false} className="w-full" />
+                  ) : (
+                  <div className="w-full aspect-square border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center text-slate-500 text-sm italic p-4 text-center">
+                     No pattern set.<br/>Click 'Set Pattern' above.
+                  </div>
+                  )}
+               </div>
+            </div>
+
+            {/* History Sidebar (Right) */}
+            <div className="absolute right-0 top-0 bottom-0 w-72 bg-black/50 backdrop-blur-md border-l border-white/10 z-30 flex flex-col pt-20">
+               <div className="p-6 border-b border-white/10 bg-slate-900/50">
+               <h3 className="font-bold text-lg text-white flex items-center gap-2">Current Draw</h3>
+               <p className="text-xs text-slate-400 mt-1">{drawnItems.length} items eliminated</p>
+               </div>
+               <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+               {currentRoundDraws.slice().reverse().map((draw, idx) => (
+                  <div key={idx} className="bg-white/10 rounded-xl p-3 flex flex-col items-center justify-center animate-in slide-in-from-right duration-300 border border-white/5 relative">
+                     <span className="absolute top-1 left-2 text-[8px] font-mono text-slate-400">{draw.time}</span>
+                     {draw.item.type === 'image' ? (
+                     <img src={draw.item.content} alt="history" className="w-16 h-16 object-contain mt-2" />
+                     ) : (
+                     <span 
+                        className="text-lg text-white text-center break-words w-full mt-2"
+                        style={{ fontWeight: draw.item.bold ? '900' : 'bold', fontStyle: draw.item.italic ? 'italic' : 'normal', fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}
+                     >
+                        {draw.item.content}
+                     </span>
+                     )}
+                  </div>
+               ))}
+               {currentRoundDraws.length === 0 && (
+                  <div className="text-center text-slate-500 text-sm mt-10 italic">No items drawn yet.</div>
+               )}
+               </div>
+            </div>
+
+            {/* Main Interactive Play Area */}
+            <div 
+               className="relative z-10 flex-1 flex items-center justify-center cursor-pointer px-[18rem]"
+               onClick={!isDrawing && !winnerData && !showMassivePattern && !showPatternModal && !showHistoryModal ? handleDraw : undefined}
+            >
+               {/* Draw Button or Display Area */}
+               {!winnerData && !isDrawing && !showMassivePattern && activePool.length > 0 && (
+               <div className="flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+                  <button className="relative group overflow-hidden rounded-full p-1 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_-10px_rgba(236,72,153,0.5)]">
+                     <div className="bg-slate-900 rounded-full px-16 py-8 flex items-center gap-4 transition-all group-hover:bg-opacity-80">
+                     <Play size={48} className="text-white fill-white" />
+                     <span className="text-5xl font-black tracking-widest bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">DRAW NEXT</span>
+                     </div>
+                  </button>
+                  <p className="mt-8 text-slate-400 font-medium tracking-widest uppercase">Click anywhere to draw ({activePool.length} left)</p>
+               </div>
+               )}
+
+               {/* Roulette Animation View */}
+               {isDrawing && displayItem && (
+               <div className="flex flex-col items-center justify-center">
+                  <div className="text-slate-400 text-2xl font-bold tracking-widest mb-8 animate-pulse">DRAWING...</div>
+                  <div className="w-96 h-96 bg-white/10 backdrop-blur-xl rounded-3xl border-4 border-white/20 flex items-center justify-center p-8 shadow-2xl">
+                     {displayItem.type === 'image' ? (
+                     <img src={displayItem.content} alt="drawing" className="w-full h-full object-contain festive-pulse" />
+                     ) : (
+                     <div 
+                        className="text-7xl text-center text-white break-words w-full line-clamp-3 festive-pulse" 
+                        style={{ fontWeight: displayItem.bold ? '900' : 'bold', fontStyle: displayItem.italic ? 'italic' : 'normal', fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}
+                     >
+                        {displayItem.content}
+                     </div>
+                     )}
+                  </div>
+               </div>
+               )}
+
+               {/* End of Pool */}
+               {!winnerData && !isDrawing && !showMassivePattern && activePool.length === 0 && (
+               <div className="text-5xl font-black text-slate-300 tracking-widest uppercase mb-20">
+                  All Items Drawn!
+               </div>
+               )}
+            </div>
+
+            {/* Massive Winner Popup */}
+            {winnerData && (
+               <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-50 animate-in fade-in duration-300">
+                  <div className="flex flex-col items-center justify-center animate-in zoom-in-50 spin-in-12 duration-500">
+                     <Trophy size={80} className="text-amber-400 mb-6 drop-shadow-[0_0_30px_rgba(251,191,36,0.8)] animate-pulse" />
+                     <h2 className="text-6xl font-black tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 mb-8 drop-shadow-2xl text-center">
+                        {winnerData.manual ? "WE HAVE A WINNER!" : `${winnerData.name} WON!`}
+                     </h2>
+                     {winnerData.card ? (
+                        <div className="max-w-[90vw] max-h-[60vh] bg-white rounded-3xl border-8 border-amber-400 flex flex-col items-center justify-center p-6 shadow-[0_0_100px_rgba(251,191,36,0.5)] overflow-hidden winner-ambient relative">
+                           <div className="grid gap-1 bg-slate-900 border border-slate-700 p-2 rounded-xl relative z-10" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}>
+                              {winnerData.card.map((cellId, i) => {
+                                 const isCenter = hasFreeSpace && gridSize % 2 !== 0 && i === Math.floor((gridSize*gridSize)/2);
+                                 const item = isCenter ? { type: 'free', content: freeSpaceText, image: freeSpaceImage } : items.find(x => x.id === cellId);
+                                 const isMarked = isCenter || drawnItems.map(d=>d.id).includes(cellId) || (displayItem && displayItem.id === cellId);
+                                 
+                                 return (
+                                    <div key={i} className={`relative w-20 h-24 sm:w-24 sm:h-32 flex items-center justify-center overflow-hidden rounded-md border border-white/10 ${isMarked ? 'bg-amber-400/20 shadow-[inset_0_0_10px_rgba(251,191,36,0.5)] border-amber-400' : 'bg-slate-800'}`}>
+                                       {item?.image || item?.type === 'image' ? (
+                                          <img src={item.image || item.content} className={`absolute inset-0 w-full h-full object-contain p-2 ${isMarked ? '' : 'opacity-40 grayscale'}`} alt="" />
+                                       ) : (
+                                          <span className={`text-xs sm:text-sm text-center leading-tight break-words px-2 ${isMarked ? 'text-amber-400 font-black' : 'text-slate-500 font-bold'}`} style={{ fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}>{item?.content}</span>
+                                       )}
+                                       {isMarked && <div className="absolute inset-0 bg-amber-500/20 animate-pulse mix-blend-overlay"></div>}
+                                    </div>
+                                 )
+                              })}
+                           </div>
+                        </div>
+                     ) : (
+                        <div className="bg-white/10 border border-white/20 rounded-3xl p-8 text-center backdrop-blur-md shadow-2xl relative z-10">
+                           <p className="text-2xl font-medium text-slate-200 mb-2">Please verify the winning printed card</p>
+                           <p className="text-sm text-slate-400">You can check their marked items against the Drawn History log on the right.</p>
+                        </div>
+                     )}
+                  </div>
+               </div>
+            )}
+
+            {/* Floating Bottom Action Bar */}
+            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-40 flex items-center gap-4">
+               {modeType === 'traditional' && !winnerData && (
+                  <button 
+                     onClick={() => setWinnerData({ manual: true })} 
+                     data-tooltip="Manually halt the game and display the winning screen if someone completes their printed card"
+                     className="flex items-center gap-3 px-8 py-3.5 bg-amber-500 hover:bg-amber-400 border border-amber-300 text-slate-900 rounded-full font-black shadow-[0_0_20px_rgba(245,158,11,0.6)] transition-all hover:scale-105 active:scale-95 backdrop-blur-md group"
+                  >
+                     <Trophy size={20} /> 
+                     <span className="tracking-widest uppercase">Declare Bingo</span>
+                  </button>
+               )}
+               <button 
+               onClick={handlePlayAgainRequest} 
+               data-tooltip="Archive current round to history, reset the draw pool, and start a new game"
+               className="flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/50 text-white rounded-full font-bold shadow-[0_0_20px_rgba(79,70,229,0.5)] transition-all hover:scale-105 active:scale-95 backdrop-blur-md group"
+               >
+               <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" /> 
+               <span className="tracking-widest uppercase">Play Again</span>
+               </button>
+
+               <button 
+               onClick={() => setShowHistoryModal(true)} 
+               data-tooltip="View massive display of all drawn items grouped by round"
+               className="flex items-center gap-3 px-8 py-3.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-full font-bold shadow-xl transition-all hover:scale-105 active:scale-95 backdrop-blur-md"
+               >
+               <History size={20} /> 
+               <span className="tracking-widest uppercase">View History</span>
+               </button>
+            </div>
+
+            {/* Massive Pattern Announcement Overlay */}
+            {showMassivePattern && (
+               <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in duration-300 pointer-events-none">
+                  <h2 className="text-4xl md:text-6xl font-black text-cyan-400 tracking-widest mb-12 drop-shadow-[0_0_30px_#22d3ee] animate-pulse uppercase text-center">New Winning Pattern!</h2>
+                  <PatternGrid 
+                     size={gridSize} activeIndices={pattern} items={items} 
+                     hasFreeSpace={hasFreeSpace} freeSpaceText={freeSpaceText} freeSpaceImage={freeSpaceImage} 
+                     interactive={false} className="w-[80vw] max-w-[500px] pattern-ambient bg-slate-900 border-2 border-cyan-500/30 p-3 rounded-xl" 
+                  />
+               </div>
+            )}
+         </>
+      )}
+
+      {/* Manual Pattern Set Modal */}
+      {showPatternModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-cyan-500/30 shadow-[0_0_50px_rgba(34,211,238,0.2)] rounded-3xl p-6 w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+             <h3 className="text-xl font-bold text-white mb-2">Set Winning Pattern</h3>
+             <p className="text-sm text-slate-400 mb-6">Click cells to toggle them on or off.</p>
+             <PatternGrid 
+                size={gridSize} activeIndices={tempPattern} items={items} 
+                hasFreeSpace={hasFreeSpace} freeSpaceText={freeSpaceText} freeSpaceImage={freeSpaceImage} 
+                interactive={true} 
+                onToggleIndex={(i) => setTempPattern(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])} 
+                className="w-full max-w-[300px] mx-auto mb-8 bg-black/40 p-2 rounded-xl border border-white/5" 
+             />
+             <div className="flex justify-end gap-3">
+                <button onClick={() => setShowPatternModal(false)} className="px-5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium transition-colors">Cancel</button>
+                <button 
+                  onClick={() => { 
+                    syncPatternToDB(tempPattern); 
+                    setShowPatternModal(false); 
+                    playShuffleSfx();
+                    setShowMassivePattern(true); 
+                    if(patternTimeoutRef.current) clearTimeout(patternTimeoutRef.current);
+                    patternTimeoutRef.current = setTimeout(() => setShowMassivePattern(false), 3500); 
+                  }} 
+                  className="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium shadow-[0_0_15px_rgba(8,145,178,0.5)] transition-all"
+                >
+                  Save & Announce
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Play Again Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-indigo-500/30 shadow-[0_0_50px_rgba(79,70,229,0.2)] rounded-3xl p-6 w-full max-w-sm flex flex-col animate-in zoom-in-95 duration-200">
+             <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+               <RefreshCw className="text-indigo-400" /> Start New Round?
+             </h3>
+             <p className="text-sm text-slate-400 mb-6">This will archive the current draws to History and reset the pool for a new game. Proceed?</p>
+             <div className="flex justify-end gap-3">
+                <button onClick={() => setShowResetConfirm(false)} className="px-5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium transition-colors">No, Cancel</button>
+                <button 
+                  onClick={executePlayAgain} 
+                  className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-[0_0_15px_rgba(79,70,229,0.5)] transition-all"
+                >
+                  Yes, Start Next Round
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Massive History Display Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6">
+           <div className="w-full max-w-6xl h-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-300">
+              <div className="flex items-center justify-between mb-8">
+                 <div>
+                    <h2 className="text-4xl font-black tracking-widest uppercase flex items-center gap-4 text-white">
+                      <History size={40} className="text-emerald-400" /> Drawn History Log
+                    </h2>
+                    <p className="text-emerald-400 font-medium tracking-wide mt-2">Verified chronological record of all draws across all rounds.</p>
+                 </div>
+                 <div className="flex items-center gap-4">
+                    <button onClick={exportCloudHistory} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-3 rounded-xl font-bold shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all hover:scale-105">
+                       <FileSpreadsheet size={20} /> Cloud Sync & Export CSV
+                    </button>
+                    <button onClick={() => setShowHistoryModal(false)} className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all">
+                       <X size={24} />
+                    </button>
+                 </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 space-y-12 pb-20">
+                 {/* Current Round */}
+                 {currentRoundDraws.length > 0 && (
+                   <div className="bg-slate-900/50 border border-emerald-500/30 rounded-3xl p-8 shadow-[0_0_30px_rgba(16,185,129,0.1)] relative">
+                     <div className="absolute top-0 right-0 bg-emerald-500/20 text-emerald-300 px-4 py-1.5 rounded-bl-xl rounded-tr-3xl text-sm font-bold tracking-widest uppercase">Ongoing Round</div>
+                     <h3 className="text-2xl font-bold text-white mb-6">Round {completedRounds.length + 1} <span className="text-sm font-normal text-slate-400 ml-4">{new Date().toLocaleDateString()}</span></h3>
+                     
+                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        {currentRoundDraws.map((d, i) => (
+                           <div key={`cur-${i}`} className="bg-black/40 border border-white/5 rounded-xl p-4 flex flex-col items-center gap-3">
+                              <span className="text-[10px] text-slate-500 font-mono tracking-wider w-full text-left">#{i+1} • {d.time}</span>
+                              {d.item.type === 'image' ? (
+                                <img src={d.item.content} alt="history" className="w-16 h-16 object-contain" />
+                              ) : (
+                                <span className="text-xl font-bold text-white text-center break-words w-full" style={{ fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}>{d.item.content}</span>
+                              )}
+                           </div>
+                        ))}
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Past Completed Rounds */}
+                 {completedRounds.slice().reverse().map((round, rIdx) => (
+                   <div key={`hist-r-${rIdx}`} className="bg-slate-800/40 border border-white/10 rounded-3xl p-8">
+                     <h3 className="text-2xl font-bold text-slate-300 mb-6">Round {round.roundId} <span className="text-sm font-normal text-slate-500 ml-4">{round.date}</span></h3>
+                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 opacity-70">
+                        {round.draws.map((d, i) => (
+                           <div key={`hist-${rIdx}-${i}`} className="bg-black/30 border border-white/5 rounded-xl p-4 flex flex-col items-center gap-3">
+                              <span className="text-[10px] text-slate-500 font-mono tracking-wider w-full text-left">#{i+1} • {d.time}</span>
+                              {d.item.type === 'image' ? (
+                                <img src={d.item.content} alt="history" className="w-16 h-16 object-contain grayscale" />
+                              ) : (
+                                <span className="text-xl font-bold text-white text-center break-words w-full" style={{ fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}>{d.item.content}</span>
+                              )}
+                           </div>
+                        ))}
+                     </div>
+                   </div>
+                 ))}
+
+                 {currentRoundDraws.length === 0 && completedRounds.length === 0 && (
+                    <div className="w-full h-64 flex flex-col items-center justify-center text-slate-500 italic border-2 border-dashed border-white/10 rounded-3xl">
+                       <History size={48} className="mb-4 opacity-20" />
+                       No draws have been recorded yet.
+                    </div>
+                 )}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Audio Element */}
+      {bgAudio && <audio ref={audioRef} src={bgAudio} loop autoPlay />}
+    </div>
+  );
+}
+
+// === JOIN MODE UI ===
+function JoinMode({ initialCode, onJoin, onExit }) {
+   const [code, setCode] = useState(initialCode || '');
+   const [name, setName] = useState('');
+
+   return (
+      <div className="h-screen bg-slate-900 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-900 via-slate-900 to-black z-0" />
+         
+         <button onClick={onExit} className="absolute top-6 left-6 flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors z-10 font-medium">
+            <ArrowLeft size={16} /> Back
+         </button>
+
+         <div className="w-full max-w-md bg-black/60 backdrop-blur-xl border border-white/10 rounded-3xl p-10 shadow-2xl relative z-10 flex flex-col items-center animate-in zoom-in-95 duration-500">
+            <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-4 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.3)] mb-8">
+               <QrCode size={40} className="text-white" />
+            </div>
+            <h2 className="text-3xl font-black text-white mb-2 tracking-widest uppercase">Join Game</h2>
+            <p className="text-slate-400 text-sm text-center mb-8">Enter the 5-digit room code displayed on the host screen to get your unique digital card.</p>
+            
+            <div className="w-full space-y-4 mb-8">
+               <div>
+                  <label className="block text-xs font-bold text-cyan-400 tracking-widest uppercase mb-2">Room Code</label>
+                  <input type="text" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 5))} placeholder="12345" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-2xl font-mono text-center text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all placeholder-slate-600 tracking-[0.5em]" />
+               </div>
+               <div>
+                  <label className="block text-xs font-bold text-cyan-400 tracking-widest uppercase mb-2 mt-4">Your Name</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. John Doe" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-lg font-medium text-center text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all placeholder-slate-600" />
+               </div>
+            </div>
+
+            <button 
+               onClick={() => {
+                  if (code.length !== 5) return alert("Code must be 5 digits");
+                  if (!name.trim()) return alert("Please enter your name");
+                  onJoin(code, name);
+               }} 
+               className="w-full py-4 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-black text-lg tracking-widest rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+               ENTER LOBBY
+            </button>
+         </div>
+      </div>
+   )
+}
+
+// === DIGITAL PLAYER MODE UI ===
+function PlayerMode({ roomCode, playerName, authUser, db, appId, onExit, customFontUrl }) {
+   const [roomData, setRoomData] = useState(null);
+   const [error, setError] = useState(null);
+   const [myCard, setMyCard] = useState(null);
+
+   useEffect(() => {
+      if (!db || !authUser) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bingo_rooms', roomCode);
+      
+      const setupPlayer = async () => {
+         try {
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+               setError("Room not found or game has ended.");
+               return;
+            }
+            const data = snap.data();
+            
+            if (!data.players[authUser.uid]) {
+               const totalCells = data.settings.gridSize * data.settings.gridSize;
+               const reqItems = data.settings.hasFreeSpace && totalCells % 2 !== 0 ? totalCells - 1 : totalCells;
+               let poolIds = data.items.map(i => i.id).sort(() => Math.random() - 0.5);
+               while (poolIds.length < reqItems) poolIds = [...poolIds, ...data.items.map(i => i.id).sort(() => Math.random() - 0.5)];
+
+               const cardIds = [];
+               let idx = 0;
+               for (let i = 0; i < totalCells; i++) {
+                  if (data.settings.hasFreeSpace && i === Math.floor(totalCells / 2) && totalCells % 2 !== 0) {
+                     cardIds.push('free');
+                  } else {
+                     cardIds.push(poolIds[idx++]);
+                  }
+               }
+
+               await updateDoc(docRef, {
+                  [`players.${authUser.uid}`]: { name: playerName, card: cardIds }
+               });
+               setMyCard(cardIds);
+            } else {
+               setMyCard(data.players[authUser.uid].card);
+            }
+         } catch(e) {
+            setError("Connection error. Please try again.");
+         }
+      };
+
+      setupPlayer().then(() => {
+         if (error) return;
+         const unsub = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) setRoomData(docSnap.data());
+            else setError("Room closed by host.");
+         });
+         return () => unsub();
+      });
+
+   }, [db, authUser, roomCode, appId, playerName, error]);
+
+   if (error) return (
+      <div className="h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
+         <AlertCircle size={48} className="text-red-500 mb-4" />
+         <h2 className="text-xl font-bold mb-6">{error}</h2>
+         <button onClick={onExit} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors">Return to Home</button>
+      </div>
+   );
+
+   if (!roomData || !myCard) return <div className="h-screen bg-slate-900 flex items-center justify-center"><RefreshCw className="animate-spin text-cyan-500" size={40} /></div>;
+
+   return (
+      <div className="h-screen bg-slate-900 flex flex-col overflow-hidden font-sans selection:bg-indigo-500/30">
+         <style>{`
+            ${customFontUrl ? `
+            @font-face {
+               font-family: 'CustomBingoFont';
+               src: url('${customFontUrl}');
+            }
+            ` : ''}
+            @keyframes cellGlow {
+               0% { box-shadow: inset 0 0 10px rgba(34,211,238,0.2); border-color: rgba(34,211,238,0.5); }
+               100% { box-shadow: inset 0 0 25px rgba(34,211,238,0.6); border-color: rgba(34,211,238,1); }
+            }
+            .marked-cell {
+               animation: cellGlow 1.5s infinite alternate ease-in-out;
+               background-color: rgba(34,211,238,0.1) !important;
+            }
+         `}</style>
+         
+         <div className="p-4 bg-slate-800/80 backdrop-blur-md border-b border-white/10 flex justify-between items-center z-10 shrink-0">
+            <h1 className="font-bold text-white tracking-widest text-sm truncate">{playerName}'s Card</h1>
+            <div className="flex items-center gap-3">
+               <span className={`text-[10px] font-bold tracking-widest uppercase px-3 py-1 rounded-full ${roomData.status === 'playing' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                  {roomData.status === 'playing' ? 'Game Active' : (roomData.status === 'winner' ? 'Game Over' : 'Waiting...')}
+               </span>
+               <button onClick={onExit} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"><X size={16}/></button>
+            </div>
+         </div>
+
+         <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+            <div 
+               className="w-full max-w-lg aspect-[3/4] bg-white rounded-xl shadow-2xl p-2 md:p-4 grid gap-1 relative border border-slate-700"
+               style={{ gridTemplateColumns: `repeat(${roomData.settings.gridSize}, minmax(0, 1fr))` }}
+            >
+               {myCard.map((cellId, i) => {
+                  const isCenter = roomData.settings.hasFreeSpace && roomData.settings.gridSize % 2 !== 0 && i === Math.floor((roomData.settings.gridSize*roomData.settings.gridSize)/2);
+                  const item = isCenter ? { type: 'free', content: roomData.settings.freeSpaceText, image: roomData.settings.freeSpaceImage } : roomData.items.find(x => x.id === cellId);
+                  
+                  // Auto check mark
+                  const isMarked = isCenter || roomData.drawnItems.includes(cellId);
+
+                  return (
+                     <div key={i} className={`relative flex items-center justify-center overflow-hidden rounded-md border transition-all duration-300 ${isMarked ? 'marked-cell border-cyan-400' : 'bg-slate-100 border-slate-300'}`}>
+                        {item?.image || item?.type === 'image' ? (
+                           <img src={item.image || item.content} className={`absolute inset-0 w-full h-full object-contain p-2 transition-all ${isMarked ? 'scale-110 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''}`} alt="" />
+                        ) : (
+                           <span className={`text-[10px] md:text-sm font-bold text-center leading-tight truncate px-1 transition-all ${isMarked ? 'text-cyan-600 scale-110 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : 'text-slate-800'}`} style={{ fontFamily: customFontUrl ? 'CustomBingoFont, sans-serif' : 'inherit' }}>{item?.content}</span>
+                        )}
+                        {isMarked && (
+                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <CheckCircle2 size={32} className="text-cyan-400/50" />
+                           </div>
+                        )}
+                     </div>
+                  )
+               })}
+
+               {/* Lock overlay if game not active */}
+               {roomData.status !== 'playing' && roomData.status !== 'winner' && (
+                  <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center rounded-xl p-6 text-center">
+                     <RefreshCw className="animate-spin text-cyan-400 mb-6" size={40} />
+                     <h3 className="text-2xl font-bold text-white mb-2 tracking-widest uppercase">Hold Tight!</h3>
+                     <p className="text-slate-400 text-sm">Look at the main screen. The game will begin shortly.</p>
+                  </div>
+               )}
+
+               {roomData.status === 'winner' && (
+                  <div className="absolute inset-0 bg-black/90 backdrop-blur-md z-30 flex flex-col items-center justify-center rounded-xl p-6 text-center animate-in fade-in duration-500">
+                     <Trophy className="text-amber-400 mb-6 animate-bounce" size={60} />
+                     <h3 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 tracking-widest uppercase mb-2">Round Over!</h3>
+                     <p className="text-slate-300 font-medium mb-8">Winner: <span className="text-white font-bold">{roomData.winnerData.name}</span></p>
+                     <p className="text-xs text-slate-500 italic">Waiting for host to start next round...</p>
+                  </div>
+               )}
+            </div>
+         </div>
+      </div>
+   );
+}
